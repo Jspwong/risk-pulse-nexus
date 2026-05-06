@@ -783,7 +783,10 @@ export class PanelLayoutManager implements AppModule {
       this.ctx.panels['strategic-risk'] = strategicRiskPanel;
     }
 
-        // Happy variant panels (lazy-loaded — only relevant for happy variant)
+    // ── US Regional Intelligence Feed ──
+    this.createNewsPanel('us', 'panels.us');
+
+    // Happy variant panels (lazy-loaded — only relevant for happy variant)
     if (SITE_VARIANT === 'happy') {
       this.lazyPanel('positive-feed', () =>
         import('@/components/PositiveNewsFeedPanel').then(m => {

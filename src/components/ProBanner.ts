@@ -48,6 +48,7 @@ export function showProBanner(container: HTMLElement): void {
   // regardless of premium state, so caching here covers both "initially
   // free" and "initially premium then downgrade" trajectories.
   bannerContainer = container;
+  return; // Pro banner disabled
 
   if (bannerEl) return;
   if (window.self !== window.top) return;

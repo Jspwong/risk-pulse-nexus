@@ -7,3 +7,8 @@
   from = "/api/rss"
   to = "/.netlify/functions/rss"
   status = 200
+
+[[redirects]]
+  from = "/api/rss-proxy"
+  to = "/.netlify/functions/rss"
+  status = 200
