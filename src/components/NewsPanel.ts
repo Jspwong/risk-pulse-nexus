@@ -302,13 +302,13 @@ export class NewsPanel extends Panel {
         element.title = 'Original: ' + originalText;
         element.classList.add('translated');
       } else {
-        element.innerHTML = '文';
+        element.innerHTML = 'T';
         // Shake animation or error state could be added here
       }
     } catch (e) {
       if (!this.element?.isConnected) return;
       console.error('Translation failed', e);
-      element.innerHTML = '文';
+      element.innerHTML = 'T';
     } finally {
       if (element.isConnected) {
         element.style.pointerEvents = 'auto';
@@ -487,7 +487,7 @@ export class NewsPanel extends Panel {
         ${item.snippet ? `<div class="item-snippet">${escapeHtml(item.snippet.length > 200 ? item.snippet.slice(0, 200).replace(/\s+\S*$/, '') + '…' : item.snippet)}</div>` : ''}
         <div class="item-time">
           ${formatTime(item.pubDate)}
-          ${getCurrentLanguage() !== 'en' ? `<button class="item-translate-btn" title="Translate" data-text="${escapeHtml(item.title)}">文</button>` : ''}
+          ${getCurrentLanguage() !== 'en' ? `<button class="item-translate-btn" title="Translate" data-text="${escapeHtml(item.title)}">T</button>` : ''}
         </div>
       </div>
     `
@@ -720,7 +720,7 @@ export class NewsPanel extends Panel {
         <div class="cluster-meta">
           <span class="top-sources">${topSourcesHtml}</span>
           <span class="item-time">${formatTime(cluster.lastUpdated)}</span>
-          ${getCurrentLanguage() !== 'en' ? `<button class="item-translate-btn" title="Translate" data-text="${escapeHtml(cluster.primaryTitle)}">文</button>` : ''}
+          ${getCurrentLanguage() !== 'en' ? `<button class="item-translate-btn" title="Translate" data-text="${escapeHtml(cluster.primaryTitle)}">T</button>` : ''}
         </div>
         ${relatedAssetsHtml}
       </div>
