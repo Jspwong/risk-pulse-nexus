@@ -191,7 +191,8 @@ export class EnterpriseRiskPanel extends Panel {
     // Seed with 3 initial events (no animation, instant)
     for (let i = 0; i < 3; i++) {
       const idx = (EVENT_POOL.length - 3 + i) % EVENT_POOL.length;
-      feedList.appendChild(this.buildEventRow(EVENT_POOL[idx], false));
+      const ev = EVENT_POOL[idx];
+      if (ev) feedList.appendChild(this.buildEventRow(ev, false));
     }
     this.eventIndex = 0;
   }
@@ -300,6 +301,7 @@ export class EnterpriseRiskPanel extends Panel {
   private pushEvent(): void {
     if (!this.feedEl) return;
     const ev = EVENT_POOL[this.eventIndex % EVENT_POOL.length];
+    if (!ev) return;
     this.eventIndex++;
 
     const row = this.buildEventRow(ev, true);
