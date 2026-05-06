@@ -64,40 +64,29 @@ async function ensureLanguageLoaded(lng: string): Promise<SupportedLanguage> {
 // Initialize i18n
 export async function initI18n(): Promise<void> {
   if (i18next.isInitialized) {
-    const currentLanguage = normalizeLanguage(i18next.language || 'en');
-    await ensureLanguageLoaded(currentLanguage);
-    applyDocumentDirection(i18next.language || currentLanguage);
+    // Force English only
+    await ensureLanguageLoaded('en');
+    applyDocumentDirection('en');
     return;
   }
 
   loadedLanguages.add('en');
 
   await i18next
-    .use(LanguageDetector)
     .init({
       resources: {
         en: { translation: enTranslation as TranslationDictionary },
       },
-      supportedLngs: [...SUPPORTED_LANGUAGES],
-      nonExplicitSupportedLngs: true,
+      lng: 'en',
+      supportedLngs: ['en'],
       fallbackLng: 'en',
       debug: import.meta.env.DEV,
       interpolation: {
         escapeValue: false, // not needed for these simple strings
       },
-      detection: {
-        order: ['localStorage', 'navigator'],
-        caches: ['localStorage'],
-      },
     });
 
-  const detectedLanguage = await ensureLanguageLoaded(i18next.language || 'en');
-  if (detectedLanguage !== 'en') {
-    // Re-trigger translation resolution now that the detected bundle is loaded.
-    await i18next.changeLanguage(detectedLanguage);
-  }
-
-  applyDocumentDirection(i18next.language || detectedLanguage);
+  applyDocumentDirection('en');
 }
 
 // Helper to translate
