@@ -379,10 +379,10 @@ export class MapComponent {
 
     // RiskSense: 4 risk categories for overseas manufacturing enterprises
     const fullLayers: (keyof MapLayers)[] = [
-      'conflicts', 'hotspots', 'sanctions',  // 地缘政治风险
-      'ais', 'pipelines', 'waterways',       // 供应链中断
-      'protests', 'gpsJamming',              // 合规政策变化
-      'economic',                            // 汇率异动
+      'conflicts', 'hotspots', 'sanctions',  // Geopolitical Risk
+      'ais', 'pipelines', 'waterways',       // Supply Chain Disruption
+      'protests', 'gpsJamming',              // Compliance & Policy
+      'economic',                            // FX Volatility
     ];
     const techLayers: (keyof MapLayers)[] = [
       'cables', 'datacenters', 'outages',                // tech infrastructure
@@ -661,10 +661,10 @@ export class MapComponent {
     } else {
       // RiskSense: 4-category risk legend for overseas manufacturing
       legend.innerHTML = `
-        <div class="map-legend-item"><span class="legend-dot" style="background:#ef4444"></span>地缘政治风险</div>
-        <div class="map-legend-item"><span class="legend-dot" style="background:#f97316"></span>供应链中断</div>
-        <div class="map-legend-item"><span class="legend-dot" style="background:#eab308"></span>合规政策变化</div>
-        <div class="map-legend-item"><span class="legend-dot" style="background:#22d3a0"></span>汇率异动</div>
+        <div class="map-legend-item"><span class="legend-dot" style="background:#ef4444"></span>Geopolitical Risk</div>
+        <div class="map-legend-item"><span class="legend-dot" style="background:#f97316"></span>Supply Chain Disruption</div>
+        <div class="map-legend-item"><span class="legend-dot" style="background:#eab308"></span>Compliance & Policy</div>
+        <div class="map-legend-item"><span class="legend-dot" style="background:#22d3a0"></span>FX Volatility</div>
       `;
     }
     return legend;

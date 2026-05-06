@@ -410,9 +410,9 @@ export class PanelLayoutManager implements AppModule {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           </span>
           <span class="risksense-logo-text">RiskSense</span>
-          <span class="risksense-logo-sub">先进制造业出海风险免疫中枢</span>
+          <span class="risksense-logo-sub">Risk Immunity Center for Advanced Manufacturing</span>
           <span class="risksense-status-pill">
-            <span class="risksense-pulse"></span>实时监测
+            <span class="risksense-pulse"></span>Live Monitoring
           </span>
         </div>
         <div class="status-indicator">
@@ -447,7 +447,7 @@ export class PanelLayoutManager implements AppModule {
       <div class="mobile-menu-overlay" id="mobileMenuOverlay"></div>
       <nav class="mobile-menu" id="mobileMenu">
         <div class="mobile-menu-header">
-          <span class="mobile-menu-title">风险免疫中枢 RiskSense</span>
+          <span class="mobile-menu-title">Risk Immunity Center · RiskSense</span>
           <button class="mobile-menu-close" id="mobileMenuClose" aria-label="Close menu">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -467,7 +467,7 @@ export class PanelLayoutManager implements AppModule {
           <span class="mobile-menu-item-icon">${getCurrentTheme() === 'dark' ? '☀️' : '🌙'}</span>
           <span class="mobile-menu-item-label">${getCurrentTheme() === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
-        <div class="mobile-menu-version">风险免疫中枢 RiskSense</div>
+        <div class="mobile-menu-version">Risk Immunity Center · RiskSense</div>
       </nav>
       <div class="region-sheet-backdrop" id="regionSheetBackdrop"></div>
       <div class="region-bottom-sheet" id="regionBottomSheet">
@@ -493,7 +493,7 @@ export class PanelLayoutManager implements AppModule {
         <div class="map-section" id="mapSection">
           <div class="panel-header">
             <div class="panel-header-left">
-              <span class="panel-title">出海风险地图</span>
+              <span class="panel-title">Overseas Risk Map</span>
             </div>
             <span class="header-clock" id="headerClock" translate="no"></span>
             <div class="map-header-actions">
@@ -523,11 +523,11 @@ export class PanelLayoutManager implements AppModule {
       <footer class="site-footer">
         <div class="site-footer-brand">
           <div class="site-footer-brand-text">
-            <span class="site-footer-name">风险免疫中枢 RiskSense</span>
-            <span class="site-footer-sub">先进制造业出海企业风险预警与动态合规沙盘 · 德勤2026数字化精英挑战赛</span>
+            <span class="site-footer-name">Risk Immunity Center · RiskSense</span>
+            <span class="site-footer-sub">Real-time Risk Intelligence & Dynamic Compliance for Global Manufacturing · Deloitte 2026 Digital Elite Challenge</span>
           </div>
         </div>
-        <span class="site-footer-copy">多智能体驱动 · 实时风险感知 · 内外部风险联动</span>
+        <span class="site-footer-copy">Multi-Agent Driven · Real-time Risk Intelligence · Internal & External Risk Integration</span>
       </footer>
     `;
 
@@ -751,15 +751,15 @@ export class PanelLayoutManager implements AppModule {
     this.ctx.map.initEscalationGetters();
     this.ctx.currentTimeRange = this.ctx.map.getTimeRange();
 
-    // ── 外部风险信号：实时新闻（RSS，无需API key）──
+    // ── External Risk Signals: Real-time News (RSS, no API key needed) ──
     this.createNewsPanel('politics', 'panels.politics');
 
-    // ── 企业内部风险映射（核心面板）──
+    // ── Enterprise Internal Risk Mapping (Core Panel) ──
     if (this.shouldCreatePanel('live-webcams')) {
       this.ctx.panels['live-webcams'] = new EnterpriseRiskPanel();
     }
 
-    // ── 国家不稳定性指数 ──
+    // ── National Instability Index ──
     if (this.shouldCreatePanel('cii')) {
       const ciiPanel = new CIIPanel();
       ciiPanel.setShareStoryHandler((code, name) => {
@@ -771,10 +771,10 @@ export class PanelLayoutManager implements AppModule {
       this.ctx.panels['cii'] = ciiPanel;
     }
 
-    // ── 基础设施级联风险 ──
+    // ── Infrastructure Cascade Risk ──
     this.createPanel('cascade', () => new CascadePanel());
 
-    // ── 战略风险概览 ──
+    // ── Strategic Risk Overview ──
     if (this.shouldCreatePanel('strategic-risk')) {
       const strategicRiskPanel = new StrategicRiskPanel();
       strategicRiskPanel.setLocationClickHandler((lat, lon) => {

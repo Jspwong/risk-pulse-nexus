@@ -28,72 +28,72 @@ interface RiskEvent {
 const RISK_DATA: RiskCategory[] = [
   {
     id: 'geopolitical',
-    title: '地缘政治风险',
+    title: 'Geopolitical Risk',
     icon: '🌐',
     score: 72,
     delta: +8,
     items: [
-      { label: '中东局势紧张度', value: '高', trend: 'up', severity: 'critical' },
-      { label: '俄乌冲突影响', value: '持续', trend: 'stable', severity: 'high' },
-      { label: '台海贸易通道', value: '关注', trend: 'up', severity: 'high' },
-      { label: '东南亚政治稳定', value: '中等', trend: 'stable', severity: 'medium' },
+      { label: 'Middle East Tension', value: 'High', trend: 'up', severity: 'critical' },
+      { label: 'Russia-Ukraine Impact', value: 'Ongoing', trend: 'stable', severity: 'high' },
+      { label: 'Taiwan Strait Trade Route', value: 'Watch', trend: 'up', severity: 'high' },
+      { label: 'SE Asia Political Stability', value: 'Moderate', trend: 'stable', severity: 'medium' },
     ],
   },
   {
     id: 'supply-chain',
-    title: '供应链中断',
+    title: 'Supply Chain Disruption',
     icon: '🔗',
     score: 58,
     delta: -4,
     items: [
-      { label: '红海航运绕行', value: '仍在持续', trend: 'stable', severity: 'critical' },
-      { label: '关键原材料库存', value: '偏低 (-12%)', trend: 'down', severity: 'high' },
-      { label: '港口拥堵指数', value: '上海/宁波', trend: 'up', severity: 'medium' },
-      { label: '物流成本指数', value: '+23% YoY', trend: 'up', severity: 'medium' },
+      { label: 'Red Sea Rerouting', value: 'Ongoing', trend: 'stable', severity: 'critical' },
+      { label: 'Key Raw Material Stock', value: 'Low (-12%)', trend: 'down', severity: 'high' },
+      { label: 'Port Congestion Index', value: 'Shanghai/Ningbo', trend: 'up', severity: 'medium' },
+      { label: 'Logistics Cost Index', value: '+23% YoY', trend: 'up', severity: 'medium' },
     ],
   },
   {
     id: 'compliance',
-    title: '合规政策变化',
+    title: 'Compliance & Policy',
     icon: '📋',
     score: 45,
     delta: +12,
     items: [
-      { label: '欧盟碳边境税 CBAM', value: '2026年全面实施', trend: 'up', severity: 'critical' },
-      { label: '美国出口管制更新', value: '芯片/AI设备', trend: 'up', severity: 'high' },
-      { label: '目标市场劳工法规', value: '3项待审', trend: 'stable', severity: 'medium' },
-      { label: '数据本地化要求', value: '印度/越南', trend: 'up', severity: 'medium' },
+      { label: 'EU Carbon Border Tax CBAM', value: 'Full rollout 2026', trend: 'up', severity: 'critical' },
+      { label: 'US Export Control Update', value: 'Chips/AI Equipment', trend: 'up', severity: 'high' },
+      { label: 'Target Market Labor Laws', value: '3 Pending Review', trend: 'stable', severity: 'medium' },
+      { label: 'Data Localization Requirements', value: 'India/Vietnam', trend: 'up', severity: 'medium' },
     ],
   },
   {
     id: 'fx',
-    title: '汇率异动',
+    title: 'FX Volatility',
     icon: '💱',
     score: 38,
     delta: -6,
     items: [
-      { label: 'USD/CNY 波动', value: '7.24 ±0.08', trend: 'stable', severity: 'medium' },
-      { label: '越南盾 VND', value: '-3.2% MTD', trend: 'down', severity: 'high' },
-      { label: '印度卢比 INR', value: '-1.8% MTD', trend: 'down', severity: 'medium' },
-      { label: '欧元 EUR/USD', value: '1.082 稳定', trend: 'stable', severity: 'low' },
+      { label: 'USD/CNY Volatility', value: '7.24 ±0.08', trend: 'stable', severity: 'medium' },
+      { label: 'Vietnamese Dong VND', value: '-3.2% MTD', trend: 'down', severity: 'high' },
+      { label: 'Indian Rupee INR', value: '-1.8% MTD', trend: 'down', severity: 'medium' },
+      { label: 'Euro EUR/USD', value: '1.082 Stable', trend: 'stable', severity: 'low' },
     ],
   },
 ];
 
 // Simulated live risk event feed
 const EVENT_POOL: Omit<RiskEvent, 'time'>[] = [
-  { category: '地缘政治', categoryColor: '#ef4444', message: '中东局势升级 — 霍尔木兹海峡通行风险上升', level: 'critical' },
-  { category: '供应链', categoryColor: '#f97316', message: '红海绕行导致欧洲航线延误 +14天', level: 'high' },
-  { category: '合规', categoryColor: '#eab308', message: 'CBAM碳关税申报窗口开启，越南工厂需提交碳排放数据', level: 'high' },
-  { category: '汇率', categoryColor: '#22d3a0', message: 'VND单日跌幅超1.2%，越南工厂结汇敞口扩大', level: 'medium' },
-  { category: '地缘政治', categoryColor: '#ef4444', message: '东南亚多国大选临近，政策不确定性上升', level: 'high' },
-  { category: '供应链', categoryColor: '#f97316', message: '宁波港集装箱积压指数达近6个月高点', level: 'high' },
-  { category: '合规', categoryColor: '#eab308', message: '印度数据本地化新规生效，系统合规改造需在90天内完成', level: 'critical' },
-  { category: '汇率', categoryColor: '#22d3a0', message: 'INR兑美元跌破84关口，印度子公司利润折算受压', level: 'medium' },
-  { category: '地缘政治', categoryColor: '#ef4444', message: '美国对华出口管制清单扩容，新增12类工业设备', level: 'critical' },
-  { category: '供应链', categoryColor: '#f97316', message: '锂矿原材料现货价格周涨幅+8.3%，库存告急', level: 'critical' },
-  { category: '合规', categoryColor: '#eab308', message: '欧盟CSRD企业可持续发展报告要求延伸至供应商', level: 'medium' },
-  { category: '汇率', categoryColor: '#22d3a0', message: 'EUR/USD突破1.09，欧洲应收账款汇兑收益改善', level: 'medium' },
+  { category: 'Geopolitical', categoryColor: '#ef4444', message: 'Middle East escalation — Strait of Hormuz transit risk rising', level: 'critical' },
+  { category: 'Supply Chain', categoryColor: '#f97316', message: 'Red Sea rerouting causes +14-day delays on Europe routes', level: 'high' },
+  { category: 'Compliance', categoryColor: '#eab308', message: 'CBAM carbon tariff filing window open — Vietnam factories must submit emissions data', level: 'high' },
+  { category: 'FX', categoryColor: '#22d3a0', message: 'VND fell >1.2% intraday — Vietnam factory FX exposure widening', level: 'medium' },
+  { category: 'Geopolitical', categoryColor: '#ef4444', message: 'Multiple SE Asia elections approaching — policy uncertainty rising', level: 'high' },
+  { category: 'Supply Chain', categoryColor: '#f97316', message: 'Ningbo port container backlog index hits 6-month high', level: 'high' },
+  { category: 'Compliance', categoryColor: '#eab308', message: 'India data localization rules in effect — systems must comply within 90 days', level: 'critical' },
+  { category: 'FX', categoryColor: '#22d3a0', message: 'INR breaks 84 vs USD — India subsidiary profit repatriation under pressure', level: 'medium' },
+  { category: 'Geopolitical', categoryColor: '#ef4444', message: 'US export control list expanded — 12 new industrial equipment categories added', level: 'critical' },
+  { category: 'Supply Chain', categoryColor: '#f97316', message: 'Lithium spot price +8.3% WoW — inventory critically low', level: 'critical' },
+  { category: 'Compliance', categoryColor: '#eab308', message: 'EU CSRD sustainability reporting requirements extended to suppliers', level: 'medium' },
+  { category: 'FX', categoryColor: '#22d3a0', message: 'EUR/USD breaks 1.09 — European receivables FX gains improving', level: 'medium' },
 ];
 
 function severityColor(s: RiskItem['severity']): string {
@@ -143,11 +143,11 @@ export class EnterpriseRiskPanel extends Panel {
   constructor() {
     super({
       id: 'live-webcams',
-      title: '企业内部风险映射',
+      title: 'Enterprise Risk Map',
       className: 'panel-wide',
       closable: true,
       collapsible: true,
-      infoTooltip: '<strong>企业内部风险映射</strong> 针对先进制造业出海企业，实时聚合地缘政治、供应链、合规政策与汇率四大维度风险信号，辅助管理层快速研判海外运营风险敞口。',
+      infoTooltip: '<strong>Enterprise Risk Map</strong> Real-time aggregation of geopolitical, supply chain, compliance, and FX risk signals for advanced manufacturing companies operating overseas.',
     });
     this.render();
     // Refresh cards every 60s
@@ -176,7 +176,7 @@ export class EnterpriseRiskPanel extends Panel {
     feedHeader.className = 'risk-feed-header';
     feedHeader.innerHTML = `
       <span class="risk-feed-pulse"></span>
-      <span class="risk-feed-title">实时风险事件流</span>
+      <span class="risk-feed-title">Live Risk Event Feed</span>
       <span class="risk-feed-badge">LIVE</span>
     `;
 
