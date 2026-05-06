@@ -31,8 +31,8 @@ const FULL_PANELS: Record<string, PanelConfig> = {
   'escalation-correlation': { name: 'Escalation Monitor', enabled: true, priority: 2 },
   'economic-correlation': { name: 'Economic Warfare', enabled: true, priority: 2 },
   'disaster-correlation': { name: 'Disaster Cascade', enabled: true, priority: 2 },
-  politics: { name: 'World News', enabled: true, priority: 1 },
-  us: { name: 'United States', enabled: true, priority: 1 },
+  'geopolitical-risk': { name: 'Geopolitical Risk', enabled: true, priority: 1 },
+  'manufacturing-overseas': { name: 'Manufacturing Overseas', enabled: true, priority: 1 },
   europe: { name: 'Europe', enabled: true, priority: 1 },
   middleeast: { name: 'Middle East', enabled: true, priority: 1 },
   africa: { name: 'Africa', enabled: true, priority: 1 },
@@ -1242,7 +1242,7 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
   },
   regionalNews: {
     labelKey: 'header.panelCatRegionalNews',
-    panelKeys: ['politics', 'us', 'europe', 'middleeast', 'africa', 'latam', 'asia'],
+    panelKeys: ['geopolitical-risk', 'manufacturing-overseas', 'europe', 'middleeast', 'africa', 'latam', 'asia'],
   },
   marketsFinance: {
     labelKey: 'header.panelCatMarketsFinance',
