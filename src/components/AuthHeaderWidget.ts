@@ -50,6 +50,7 @@ export class AuthHeaderWidget {
   }
 
   private renderSignedOut(): void {
+    return; // Disabled for presentation
     const signInBtn = document.createElement('button');
     signInBtn.className = 'auth-signin-btn';
     signInBtn.textContent = t('auth.signIn');
