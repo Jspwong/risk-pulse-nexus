@@ -159,23 +159,23 @@ function mapSeedPayload(raw: Record<string, unknown>): FearGreedData | null {
 const CAT_NAMES = ['sentiment','volatility','positioning','trend','breadth','momentum','liquidity','credit','macro','crossAsset'] as const;
 
 const CAT_DISPLAY: Record<string, string> = {
-  sentiment: 'Sentiment',
-  volatility: 'Volatility',
-  positioning: 'Positioning',
-  trend: 'Trend',
-  breadth: 'Breadth',
-  momentum: 'Momentum',
-  liquidity: 'Liquidity',
-  credit: 'Credit',
-  macro: 'Macro',
-  crossAsset: 'Cross-Asset',
+  sentiment: '情绪',
+  volatility: '波动性',
+  positioning: '持仓',
+  trend: '趋势',
+  breadth: '广度',
+  momentum: '动量',
+  liquidity: '流动性',
+  credit: '信用',
+  macro: '宏观',
+  crossAsset: '跨资产',
 };
 
 export class FearGreedPanel extends Panel {
   private data: FearGreedData | null = null;
 
   constructor() {
-    super({ id: 'fear-greed', title: t('panels.fearGreed'), showCount: false, infoTooltip: 'Composite sentiment index: 10 weighted categories (volatility, positioning, breadth, momentum, liquidity, credit, macro, cross-asset, sentiment, trend).' });
+    super({ id: 'fear-greed', title: t('panels.fearGreed'), showCount: false, infoTooltip: '综合情绪指数：10个加权类别 (volatility, positioning, breadth, momentum, liquidity, credit, macro, cross-asset, sentiment, trend).' });
   }
 
   public async fetchData(): Promise<boolean> {
@@ -236,7 +236,7 @@ export class FearGreedPanel extends Panel {
       const s = Math.round(c.score ?? 50);
       const w = Math.round((c.weight ?? 0) * 100);
       const contrib = (c.contribution ?? 0).toFixed(1);
-      const deg = c.degraded ? ' <span style="color:#e67e22;font-size:10px">degraded</span>' : '';
+      const deg = c.degraded ? ' <span style="color:#e67e22;font-size:10px">降级</span>' : '';
       const barColor = scoreColor(s);
       const displayName = CAT_DISPLAY[name] ?? name;
       return `

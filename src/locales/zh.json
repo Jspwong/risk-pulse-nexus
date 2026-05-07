@@ -42,7 +42,7 @@
       "conflictEvents": "冲突事件",
       "activeStrikes": "活跃罢工",
       "aviationDisruptions": "机场中断",
-      "gpsJammingZones": "GPS Jamming Zones"
+      "gpsJammingZones": "GPS干扰区域"
     },
     "timeAgo": {
       "m": "{{count}}分钟前",
@@ -253,7 +253,7 @@
     "climate": "气候异常",
     "populationExposure": "人口暴露",
     "securityAdvisories": "安全警告",
-    "orefSirens": "Israel Sirens",
+    "orefSirens": "以色列警报",
     "telegramIntel": "Telegram 情报",
     "startups": "创业公司与风投",
     "vcblogs": "风投洞察与文章",
@@ -277,13 +277,13 @@
     "gccInvestments": "GCC投资",
     "geoHubs": "地缘政治枢纽",
     "liveYouTube": "实时摄像头",
-    "pinnedWebcams": "Pinned Webcams",
+    "pinnedWebcams": "固定摄像头",
     "gulfEconomies": "海湾经济",
     "gulfIndices": "海湾指数",
     "gulfCurrencies": "海湾货币",
     "gulfOil": "海湾石油",
-    "bigmac": "Real Big Mac Index",
-    "fearGreed": "Fear & Greed"
+    "bigmac": "真实巨无霸指数",
+    "fearGreed": "恐惧与贪婪"
   },
   "commands": {
     "prefixes": {
@@ -646,28 +646,28 @@
         "port": "港口"
       },
       "levels": {
-        "critical": "Critical",
-        "high": "High",
-        "elevated": "Elevated",
-        "moderate": "Moderate",
-        "normal": "Normal",
-        "low": "Low"
+        "critical": "危急",
+        "high": "高",
+        "elevated": "升高",
+        "moderate": "中等",
+        "normal": "正常",
+        "low": "低"
       },
       "trends": {
-        "rising": "Rising",
-        "falling": "Falling",
-        "stable": "Stable"
+        "rising": "上升",
+        "falling": "下降",
+        "stable": "稳定"
       },
       "fallback": {
-        "instabilityIndex": "**Instability Index: {{score}}/100** ({{level}}, {{trend}})",
-        "protestsDetected": "{{count}} active protests detected",
-        "aircraftTracked": "{{count}} military aircraft tracked",
-        "vesselsTracked": "{{count}} military vessels tracked",
+        "instabilityIndex": "**不稳定指数：{{score}}/100**（{{level}}，{{trend}}）",
+        "protestsDetected": "检测到{{count}}起活跃抗议",
+        "aircraftTracked": "追踪到{{count}}架军用飞机",
+        "vesselsTracked": "追踪到{{count}}艘军用舰艇",
         "activeStrikes": "检测到{{count}}起活跃罢工",
-        "internetOutages": "{{count}} internet outages",
-        "recentEarthquakes": "{{count}} recent earthquakes",
-        "stockIndex": "Stock index: {{value}}",
-        "recentHeadlines": "**Recent headlines:**"
+        "internetOutages": "{{count}}起互联网中断",
+        "recentEarthquakes": "{{count}}起近期地震",
+        "stockIndex": "股票指数：{{value}}",
+        "recentHeadlines": "**近期头条：**"
       }
     }
   },
@@ -677,7 +677,7 @@
       "paused": "摄像头已暂停",
       "pausedIdle": "摄像头已暂停 — 移动鼠标以恢复",
       "regions": {
-        "iran": "IRAN ATTACKS",
+        "iran": "伊朗事件",
         "all": "全部",
         "mideast": "中东",
         "europe": "欧洲",
@@ -706,7 +706,7 @@
       "matches": "匹配"
     },
     "regulation": {
-      "dashboard": "AI Regulation Dashboard",
+      "dashboard": "AI监管仪表盘",
       "timeline": "时间线",
       "deadlines": "截止日期",
       "regulations": "法规",
@@ -723,18 +723,18 @@
       "active": "现行",
       "proposed": "拟议",
       "updated": "已更新",
-      "actionsCount": "{{count}} actions",
-      "deadlinesCount": "{{count}} deadlines",
-      "days": "days",
-      "activeCount": "Active Regulations ({{count}})",
-      "proposedCount": "Proposed Regulations ({{count}})",
-      "moreProvisions": "+{{count}} more...",
-      "source": "Source",
+      "actionsCount": "{{count}}项行动",
+      "deadlinesCount": "{{count}}个截止日期",
+      "days": "天",
+      "activeCount": "现行法规（{{count}}）",
+      "proposedCount": "拟议法规（{{count}}）",
+      "moreProvisions": "+{{count}} 更多...",
+      "source": "来源",
       "stances": {
-        "strict": "Strict",
-        "moderate": "Moderate",
-        "permissive": "Permissive",
-        "undefined": "Undefined"
+        "strict": "严格",
+        "moderate": "适中",
+        "permissive": "宽松",
+        "undefined": "未定义"
       },
       "infoTooltip": "<strong>监管</strong> 全球监管机构的监管行动、政策变更和执法更新：金融、科技、能源和贸易部门。来源：政府和监管机构官方出版物。"
     },
@@ -752,18 +752,18 @@
       "noOilDataRetry": "石油数据暂时不可用 - 将自动重试",
       "vsPreviousWeek": "与上周相比",
       "in": "于",
-      "centralBanks": "Central Banks",
-      "laborMarket": "Labor Market",
-      "metroUnemployment": "Metro Unemployment",
-      "noBisData": "BIS data temporarily unavailable - will retry",
-      "policyRate": "Policy Rate",
-      "exchangeRate": "Exchange Rate",
-      "creditToGdp": "Credit / GDP",
-      "realEer": "Real EER",
-      "change": "Change",
-      "cut": "cut",
-      "hike": "hike",
-      "hold": "hold"
+      "centralBanks": "央行",
+      "laborMarket": "劳动力市场",
+      "metroUnemployment": "城市失业率",
+      "noBisData": "BIS数据暂时不可用 — 将自动重试",
+      "policyRate": "政策利率",
+      "exchangeRate": "汇率",
+      "creditToGdp": "信贷/GDP",
+      "realEer": "实际有效汇率",
+      "change": "变化",
+      "cut": "降息",
+      "hike": "加息",
+      "hold": "维持"
     },
     "supplyChain": {
       "chokepoints": "咽喉要道",
@@ -777,13 +777,13 @@
       "spikeAlert": "检测到异常飙升 — 费率显著高于52周均值（周度）",
       "warnings": "条警告",
       "aisDisruptions": "AIS中断",
-      "routingAction": "Routing",
-      "disruption": "Disruption",
-      "vessels": "vessels",
-      "incidents7d": "incidents (7d)",
-      "corridorDisruption": "Corridor Disruption",
-      "corridor": "Corridor",
-      "loadingCorridors": "Loading corridor data...",
+      "routingAction": "路由",
+      "disruption": "中断",
+      "vessels": "艘船",
+      "incidents7d": "事件（7天）",
+      "corridorDisruption": "走廊中断",
+      "corridor": "走廊",
+      "loadingCorridors": "正在加载走廊数据...",
       "mineral": "矿产",
       "topProducers": "主要生产国",
       "risk": "风险",
@@ -831,9 +831,9 @@
       "no": "否",
       "vol": "交易量",
       "closes": "截止",
-      "leanYes": "Lean Yes",
-      "leanNo": "Lean No",
-      "tossUp": "Toss-up"
+      "leanYes": "倾向是",
+      "leanNo": "倾向否",
+      "tossUp": "难分高下"
     },
     "stablecoins": {
       "pegHealth": "锚定健康度",
@@ -843,7 +843,7 @@
       "mcap": "市值",
       "vol24h": "24小时交易量",
       "chg24h": "24小时变化",
-      "infoTooltip": "<strong>Stablecoins</strong> Peg health, market cap, and 24h volume for major USD-pegged tokens (USDT, USDC, DAI, BUSD). A broken peg signals systemic risk."
+      "infoTooltip": "<strong>稳定币</strong> 主要美元锚定代币（USDT、USDC、DAI、BUSD）的锚定健康度、市值和24小时交易量。锚定失效意味着系统性风险。"
     },
     "status": {
       "dataFeeds": "数据源",
@@ -859,10 +859,10 @@
       "live": "实时",
       "historicalPlayback": "历史回放",
       "close": "关闭",
-      "skipToStart": "Skip to start",
-      "previous": "Previous",
-      "next": "Next",
-      "skipToEnd": "Skip to end"
+      "skipToStart": "跳到开头",
+      "previous": "上一个",
+      "next": "下一个",
+      "skipToEnd": "跳到末尾"
     },
     "pizzint": {
       "title": "五角大楼披萨指数",
@@ -1196,11 +1196,11 @@
     },
     "insights": {
       "noStories": "暂无突发或多源报道",
-      "step": "Step {{step}}/{{total}}",
-      "waitingForData": "Waiting for news data...",
-      "rankingStories": "Ranking important stories...",
-      "analyzingSentiment": "Analyzing sentiment...",
-      "generatingBrief": "Generating world brief...",
+      "step": "第{{step}}步/共{{total}}步",
+      "waitingForData": "正在等待新闻数据...",
+      "rankingStories": "正在排列重要报道...",
+      "analyzingSentiment": "正在分析情绪...",
+      "generatingBrief": "正在生成世界简报...",
       "infoTooltip": "<strong>AI驱动分析</strong><br>• <strong>世界简报</strong>：AI摘要（Groq/OpenRouter）<br>• <strong>情绪分析</strong>：新闻情感分析<br>• <strong>传播速度</strong>：快速传播的报道<br>• <strong>焦点</strong>：将新闻实体与地图信号（军事、抗议、中断）关联<br><em>仅限桌面端 • 由Llama 3.3 + 焦点检测驱动</em>",
       "settingsTitle": "Settings",
       "sectionMap": "Map",
@@ -1298,29 +1298,29 @@
         "deEscalating": "缓和中",
         "stable": "稳定"
       },
-      "insufficientData": "Insufficient Data",
-      "unableToAssess": "Unable to assess risk level.",
-      "enableDataSources": "Enable data sources to begin monitoring.",
-      "requiredDataSources": "Required Data Sources",
-      "optionalSources": "Optional Sources",
-      "enableCoreFeeds": "Enable Core Feeds",
-      "waitingForData": "Waiting for data...",
-      "refresh": "Refresh",
-      "learningMode": "Learning Mode - {{minutes}}m until reliable",
-      "noData": "no data",
-      "enable": "Enable",
-      "convergenceMetric": "Convergence",
-      "ciiDeviation": "CII Deviation",
-      "infraEvents": "Infra Events",
-      "highAlerts": "High Alerts",
-      "topRisks": "Top Risks",
-      "recentAlerts": "Recent Alerts ({{count}})",
-      "updated": "Updated: {{time}}",
-      "time": {
-        "justNow": "just now",
-        "minutesAgo": "{{count}}m ago",
-        "hoursAgo": "{{count}}h ago"
-      },
+      "insufficientData": "数据不足",
+  "unableToAssess": "无法评估风险等级。",
+  "enableDataSources": "请开启数据源以启动监控。",
+  "requiredDataSources": "核心数据源",
+  "optionalSources": "可选数据源",
+  "enableCoreFeeds": "开启核心数据流",
+  "waitingForData": "等待数据接入...",
+  "refresh": "刷新",
+  "learningMode": "学习模式 - 距离数据可靠还需 {{minutes}} 分钟",
+  "noData": "暂无数据",
+  "enable": "启用",
+  "convergenceMetric": "收敛度",
+  "ciiDeviation": "CII 偏离度",
+  "infraEvents": "基础设施事件",
+  "highAlerts": "高危预警",
+  "topRisks": "核心风险项",
+  "recentAlerts": "最近预警 ({{count}})",
+  "updated": "更新时间: {{time}}",
+  "time": {
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前"
+  },
       "infoTooltip": "<strong>方法论</strong>综合评分（0-100）混合：<ul><li>50% 国家不稳定性（前5名加权）</li><li>30% 地理趋同区域</li><li>20% 基础设施事故</li></ul>每5分钟自动刷新。"
     },
     "techEvents": {
@@ -1341,19 +1341,19 @@
       "infoTooltip": "<strong>科技活动</strong> 即将举行和近期的科技活动：会议、产品发布、监管听证会和财报电话会议。从官方活动日历和行业来源汇总。"
     },
     "techReadiness": {
-      "internetUsers": "互联网用户",
-      "mobileSubscriptions": "移动订阅",
-      "rdSpending": "研发支出",
-      "fetchingData": "Fetching World Bank Data",
-      "internetUsersIndicator": "Internet Users",
-      "mobileSubscriptionsIndicator": "Mobile Subscriptions",
-      "broadbandAccess": "Broadband Access",
-      "rdExpenditure": "R&D Expenditure",
-      "analyzingCountries": "Analyzing 200+ countries...",
-      "source": "Source: World Bank",
-      "updated": "Updated: {{date}}",
-      "infoTooltip": "<strong>全球科技就绪度</strong><br>基于世界银行数据的综合评分（0-100）：<br><br><strong>显示指标：</strong><br>🌐 互联网用户（占人口百分比）<br>📱 移动订阅（每100人）<br>🔬 研发支出（占GDP百分比）<br><br><strong>权重：</strong>研发（35%）、互联网（30%）、宽带（20%）、移动（15%）<br><br><em>— = 无近期可用数据</em><br><em>来源：世界银行开放数据（2019-2024）</em>"
-    },
+  "internetUsers": "互联网渗透率",
+  "mobileSubscriptions": "移动网络覆盖",
+  "rdSpending": "科研投入规模",
+  "fetchingData": "正在获取世界银行实时数据...",
+  "internetUsersIndicator": "互联网用户占比",
+  "mobileSubscriptionsIndicator": "移动用户订阅数",
+  "broadbandAccess": "宽带普及率",
+  "rdExpenditure": "研发支出 (占GDP比重)",
+  "analyzingCountries": "正在分析全球 200 多个国家数据...",
+  "source": "数据来源：世界银行 (World Bank)",
+  "updated": "更新日期：{{date}}",
+  "infoTooltip": "<strong>全球科技就绪度 (Tech Readiness)</strong><br>基于世界银行数据的综合评分 (0-100)：<br><br><strong>监测指标：</strong><br>🌐 互联网用户 (占总人口百分比)<br>📱 移动端订阅 (每百人拥有量)<br>🔬 研发支出 (占GDP百分比)<br><br><strong>权重配置：</strong>研发投入 (35%)、互联网普及 (30%)、宽带接入 (20%)、移动通信 (15%)<br><br><em>— = 近期数据缺损</em><br><em>来源：世界银行开放数据库 (2019-2024)</em>"
+},
     "populationExposure": {
       "noData": "无可用暴露数据",
       "totalAffected": "受影响总数",
@@ -1565,42 +1565,42 @@
       "filterCyber": "网络"
     },
     "investments": {
-      "infoTooltip": "沙特阿拉伯和阿联酋在全球关键基础设施领域的对外直接投资数据库。点击某行可在地图上飞到该投资所在位置。",
-      "searchPlaceholder": "Search assets, countries, entities…",
-      "allCountries": "All Countries",
-      "saudiArabia": "Saudi Arabia",
-      "uae": "UAE",
-      "allSectors": "All Sectors",
-      "allEntities": "All Entities",
-      "allStatuses": "All Statuses",
-      "operational": "Operational",
-      "underConstruction": "Under Construction",
-      "announced": "Announced",
-      "rumoured": "Rumoured",
-      "divested": "Divested",
-      "asset": "Asset",
-      "country": "Country",
-      "sector": "Sector",
-      "status": "Status",
-      "investment": "Investment",
-      "year": "Year",
-      "noMatch": "No investments match filters",
-      "undisclosed": "Undisclosed",
-      "sectors": {
-        "ports": "Ports",
-        "pipelines": "Pipelines",
-        "energy": "Energy",
-        "datacenters": "Data Centers",
-        "airports": "Airports",
-        "railways": "Railways",
-        "telecoms": "Telecoms",
-        "water": "Water",
-        "logistics": "Logistics",
-        "mining": "Mining",
-        "realEstate": "Real Estate",
-        "manufacturing": "Manufacturing"
-      }
-    },
+  "infoTooltip": "沙特阿拉伯和阿联酋在全球关键基础设施领域的对外直接投资数据库。点击某行可在地图上飞到该投资所在位置。",
+  "searchPlaceholder": "搜索资产、国家、实体...",
+  "allCountries": "所有国家",
+  "saudiArabia": "沙特阿拉伯",
+  "uae": "阿联酋",
+  "allSectors": "所有行业",
+  "allEntities": "所有实体",
+  "allStatuses": "所有状态",
+  "operational": "运营中",
+  "underConstruction": "建设中",
+  "announced": "已宣布",
+  "rumoured": "传闻",
+  "divested": "已撤资/剥离",
+  "asset": "资产名称",
+  "country": "投资目的地",
+  "sector": "所属行业",
+  "status": "项目状态",
+  "investment": "投资额",
+  "year": "投资年份",
+  "noMatch": "未找到匹配的投资记录",
+  "undisclosed": "未披露",
+  "sectors": {
+    "ports": "港口码头",
+    "pipelines": "油气管网",
+    "energy": "能源基建",
+    "datacenters": "数据中心",
+    "airports": "航空枢纽",
+    "railways": "轨道交通",
+    "telecoms": "电信通讯",
+    "water": "水务设施",
+    "logistics": "物流仓储",
+    "mining": "矿产开发",
+    "realEstate": "基础设施房地产",
+    "manufacturing": "先进制造"
+  }
+},
     "prediction": {
       "infoTooltip": "<strong>预测市场</strong>真金白银的预测市场：<ul><li>价格反映群体概率估计</li><li>交易量越高 = 信号越可靠</li><li>聚焦地缘政治和时事</li></ul>来源：Polymarket (polymarket.com)"
     },
@@ -1627,71 +1627,71 @@
         "buy": "买入",
         "cash": "持币"
       },
-      "bullish": "{{count}}/{{total}} 看涨",
+      "bullish": "{{count}}/{{total}} 看涨信号",
       "signals": {
-        "liquidity": "流动性",
-        "flow": "资金流",
-        "regime": "市场环境",
-        "btcTrend": "BTC趋势",
-        "hashRate": "Hash Rate",
-        "momentum": "Momentum",
-        "fearGreed": "恐惧 &amp; 贪婪"
+        "liquidity": "市场流动性",
+        "flow": "资金流向",
+        "regime": "市场周期/环境",
+        "btcTrend": "BTC 趋势",
+        "hashRate": "算力表现 (Hash Rate)",
+        "momentum": "动能指标 (Momentum)",
+        "fearGreed": "恐慌与贪婪指数"
       }
     },
     "panel": {
-      "showMethodologyInfo": "Show methodology info",
-      "dragToResize": "Drag to resize (double-click to reset)",
-      "openSettings": "Open Settings"
-    },
-    "languageSelector": {
-      "selectLanguage": "Select Language",
-      "mapLabelsFallbackVi": "越南语地图标签目前回退为英语显示。"
-    },
+    "showMethodologyInfo": "查看方法论说明",
+    "dragToResize": "拖动调整大小 (双击重置)",
+    "openSettings": "打开设置"
+  },
+  "languageSelector": {
+    "selectLanguage": "选择语言",
+    "mapLabelsFallbackVi": "越南语地图标签目前回退为英语显示。"
+  },
     "serviceStatus": {
-      "checkingServices": "Checking services...",
-      "allOperational": "All services operational",
-      "ok": "OK",
-      "degraded": "Degraded",
-      "outage": "Outage",
-      "backendUnavailable": "Desktop local backend unavailable. Falling back to cloud API.",
-      "desktopReadiness": "Desktop readiness",
-      "acceptanceChecks": "Acceptance checks: {{ready}}/{{total}} ready · key-backed features {{available}}/{{featureTotal}}",
-      "nonParityFallbacks": "Non-parity fallbacks ({{count}})",
-      "categories": {
-        "all": "All",
-        "cloud": "Cloud",
-        "dev": "Dev Tools",
-        "comm": "Comms",
-        "ai": "AI",
-        "saas": "SaaS"
-      },
-      "infoTooltip": "<strong>服务状态</strong> 主要云平台、金融基础设施和关键互联网服务的实时运营状态。来源：官方状态页面（AWS、Azure、GCP、Cloudflare、交易所）。事故可能表明更大范围的中断事件。"
+    "checkingServices": "正在检测服务状态...",
+    "allOperational": "所有服务运行正常",
+    "ok": "正常",
+    "degraded": "性能下降",
+    "outage": "服务中断",
+    "backendUnavailable": "本地后端不可用，已回退至云端 API。",
+    "desktopReadiness": "桌面环境准备就绪",
+    "acceptanceChecks": "准入检查：{{ready}}/{{total}} 就绪 · 关键功能 {{available}}/{{featureTotal}} 可用",
+    "nonParityFallbacks": "非对等回退 ({{count}})",
+    "categories": {
+      "all": "全部",
+      "cloud": "云平台",
+      "dev": "开发工具",
+      "comm": "通信",
+      "ai": "人工智能",
+      "saas": "SaaS 软件"
     },
+    "infoTooltip": "<strong>服务状态</strong> 主要云平台、金融基础设施和关键互联网服务的实时运营状态。来源：官方状态页面（AWS、Azure、GCP、Cloudflare、交易所）。事故可能表明更大范围的中断事件。"
+  },
     "verification": {
-      "title": "Information Verification Checklist",
-      "hint": "Based on Bellingcat's OSH Framework",
-      "verdicts": {
-        "verified": "VERIFIED",
-        "likely": "LIKELY AUTHENTIC",
-        "uncertain": "UNCERTAIN",
-        "unreliable": "UNRELIABLE"
-      },
-      "notesTitle": "Verification Notes",
-      "noNotes": "No notes added",
-      "addNotePlaceholder": "Add verification note...",
-      "add": "Add",
-      "resetChecklist": "Reset Checklist",
-      "checks": {
-        "recency": "Recent timestamp confirmed",
-        "geolocation": "Location verified",
-        "source": "Primary source identified",
-        "crossref": "Cross-referenced with other sources",
-        "noAi": "No AI generation artifacts",
-        "noRecrop": "Not recycled/old footage",
-        "metadata": "Metadata verified",
-        "context": "Context established"
-      }
+    "title": "信息验证核对清单",
+    "hint": "基于 Bellingcat OSH 开源情报框架",
+    "verdicts": {
+      "verified": "已确认真实",
+      "likely": "大概率真实",
+      "uncertain": "不确定",
+      "unreliable": "不可靠"
     },
+    "notesTitle": "验证笔记",
+    "noNotes": "暂无笔记",
+    "addNotePlaceholder": "添加验证说明...",
+    "add": "添加",
+    "resetChecklist": "重置清单",
+    "checks": {
+      "recency": "时间戳已确认",
+      "geolocation": "地理位置已验证",
+      "source": "原始出处已识别",
+      "crossref": "多源交叉验证",
+      "noAi": "无 AI 生成痕迹",
+      "noRecrop": "非旧闻/搬运内容",
+      "metadata": "元数据已校验",
+      "context": "背景环境已建立"
+    }
+  },
     "liveNews": {
       "retry": "Retry",
       "notLive": "{{name}} is not currently live",
@@ -1734,44 +1734,44 @@
       "hideMap": "隐藏地图"
     },
     "internetDisruptions": {
-      "infoTooltip": "<strong>Internet Disruptions</strong> Real-time internet outages, DDoS attacks, and traffic anomalies from global network monitoring:<ul><li><strong>Outages</strong>: BGP-detected connectivity failures by country</li><li><strong>DDoS</strong>: Volumetric attack reports by protocol and vector</li><li><strong>Anomalies</strong>: Unusual traffic patterns from Cloudflare Radar</li></ul>"
-    },
-    "commodities": {
-      "infoTooltip": "<strong>Commodities</strong> Tradeable non-energy commodity tape focused on metals and materials. Energy prices live in Energy Complex; macro stress indicators live in Macro Stress."
-    },
-    "crypto": {
-      "infoTooltip": "<strong>Crypto</strong> Live prices, 24h changes, and volume for major cryptocurrencies. Data sourced from CoinGecko."
-    },
-    "gulfEconomies": {
-      "infoTooltip": "<strong>Gulf Economies</strong> Real-time Gulf stock indices, currency rates, and oil prices for GCC economies (Saudi Arabia, UAE, Kuwait, Qatar, Bahrain, Oman)."
-    },
-    "groceryBasket": {
-      "infoTooltip": "<strong>Grocery Index</strong> Global grocery basket price comparison across 24 countries — tracks real-world consumer goods inflation beyond headline CPI."
-    },
-    "bigmac": {
-      "infoTooltip": "<strong>Real Big Mac Index</strong> The Economist's Big Mac Index measures purchasing power parity by comparing McDonald's burger prices across countries. Updated when new data is published (quarterly/annually)."
-    },
-    "defiTokens": {
-      "infoTooltip": "<strong>DeFi Tokens</strong> Prices and 24h/7d performance for major decentralized finance protocol tokens — DEXes, lending platforms, and yield protocols."
-    },
-    "aiTokens": {
-      "infoTooltip": "<strong>AI Tokens</strong> Prices and 24h/7d performance for AI and machine learning sector tokens — compute networks, decentralized AI infrastructure, and data protocols."
-    },
-    "altTokens": {
-      "infoTooltip": "<strong>Alt Tokens</strong> Prices and 24h/7d performance for alternative and emerging crypto tokens outside the major-cap tiers."
-    },
-    "stockAnalysis": {
-      "infoTooltip": "<strong>Premium Stock Analysis</strong> AI-powered analysis for stocks in your watchlist — buy/hold/sell signals, price targets, key risks, and catalysts updated daily."
-    },
-    "stockBacktest": {
-      "infoTooltip": "<strong>Premium Backtesting</strong> Historical performance backtests for stocks in your watchlist — past returns, max drawdown, and volatility metrics."
-    },
-    "dailyMarketBrief": {
-      "infoTooltip": "<strong>Daily Market Brief</strong> AI-generated daily summary of global market conditions, key macro trends, and sector-level signals — refreshes each trading day."
-    },
+    "infoTooltip": "<strong>网络中断监控</strong> 实时监测全球范围内的网络宕机、DDoS 攻击及流量异常：<ul><li><strong>宕机 (Outages)</strong>：基于 BGP 探测的国家级连接失败</li><li><strong>DDoS 攻击</strong>：按协议和向量分类的流量攻击报告</li><li><strong>异常流量</strong>：源自 Cloudflare Radar 的非常规流量模式</li></ul>"
+  },
+  "commodities": {
+    "infoTooltip": "<strong>大宗商品</strong> 专注于金属与原材料的可交易非能源类商品行情。能源价格请参考“能源综合看板”，宏观压力指标请参考“宏观压力测试”。"
+  },
+  "crypto": {
+    "infoTooltip": "<strong>加密资产</strong> 主流加密货币的实时价格、24小时涨跌幅及成交量。数据源自 CoinGecko。"
+  },
+  "gulfEconomies": {
+    "infoTooltip": "<strong>海湾经济体</strong> GCC 国家（沙特、阿联酋、科威特、卡塔尔、巴林、阿曼）的实时股指、汇率及油价看板。"
+  },
+  "groceryBasket": {
+    "infoTooltip": "<strong>生活成本指数</strong> 全球 24 个国家的生活消费品篮子价格对比——追踪核心 CPI 之外的现实世界通胀水平。"
+  },
+  "bigmac": {
+    "infoTooltip": "<strong>巨无霸指数</strong> 由《经济学人》发布，通过对比各国麦当劳汉堡价格来衡量购买力平价 (PPP)。随官方季度/年度数据同步更新。"
+  },
+  "defiTokens": {
+    "infoTooltip": "<strong>DeFi 代币</strong> 主流去中心化金融协议代币（包括 DEX、借贷平台和收益协议）的价格及 24h/7d 表现。"
+  },
+  "aiTokens": {
+    "infoTooltip": "<strong>AI 代币</strong> 人工智能与机器学习板块代币（包括计算网络、去中心化 AI 基础设施及数据协议）的价格及表现。"
+  },
+  "altTokens": {
+    "infoTooltip": "<strong>山寨/新兴代币</strong> 主流市值以外的其他加密资产及新兴板块代币的价格与表现。"
+  },
+  "stockAnalysis": {
+    "infoTooltip": "<strong>高级股票分析</strong> 针对自选股的 AI 驱动分析——每日更新买入/持有/卖出信号、目标价、核心风险及催化剂因素。"
+  },
+  "stockBacktest": {
+    "infoTooltip": "<strong>量化回测</strong> 针对自选股的历史表现回测——涵盖过往收益率、最大回撤及波动率指标。"
+  },
+  "dailyMarketBrief": {
+    "infoTooltip": "<strong>每日市场简报</strong> AI 生成的全球市场状况摘要，涵盖核心宏观趋势及行业级信号——每个交易日自动更新。"
+  },
     "centralBankWatch": {
-      "infoTooltip": "<strong>Central Bank Watch</strong> Latest statements, rate decisions, and communications from the Federal Reserve, ECB, Bank of England, and other major central banks worldwide."
-    },
+    "infoTooltip": "<strong>央行观察</strong> 追踪美联储 (Fed)、欧央行 (ECB)、英格兰银行及全球主要央行的最新声明、利率决议及政策沟通。"
+  },
     "airlineIntel": {
       "infoTooltip": "<strong>航空情报</strong> 实时航空公司运营数据：航线暂停、空域关闭、承运商公告和紧急改航。来源：航空当局NOTAM和承运商通报。"
     },
@@ -1876,12 +1876,12 @@
       "highSeverity": "高严重性"
     },
     "gpsJamming": {
-      "title": "GPS/GNSS干扰",
-      "navPerformance": "Nav Performance",
-      "samples": "ADS-B Samples",
-      "aircraft": "Aircraft",
-      "h3Hex": "H3 Hex"
-    },
+  "title": "GPS/GNSS 信号干扰",
+  "navPerformance": "导航精度 (NIC)",
+  "samples": "ADS-B 采样数",
+  "aircraft": "关联航空器",
+  "h3Hex": "H3 网格编码"
+},
     "flight": {
       "groundStop": "地面停航",
       "groundDelay": "地面延误计划",
@@ -1893,11 +1893,11 @@
       "avgDelay": "平均延误",
       "cancelled": "已取消",
       "sources": {
-        "faa": "FAA ASWS",
-        "eurocontrol": "Eurocontrol",
+        "faa": "美国联邦航空局 (FAA)",
+        "eurocontrol": "欧洲空管局",
         "computed": "计算值",
-        "aviationstack": "Flight Data",
-        "notam": "NOTAM"
+        "aviationstack": "实时航班数据",
+        "notam": "航行通告 (NOTAM)"
       },
       "regions": {
         "americas": "美洲",
@@ -2184,25 +2184,25 @@
       "attribution": "来源：OpenSky Network"
     },
     "militaryVessel": {
-      "aisDark": "AIS信号消失",
-      "vessel": "舰艇",
-      "speed": "速度",
-      "heading": "航向",
-      "mmsi": "MMSI",
-      "hull": "舷号",
-      "region": "REGION",
-      "strikeGroup": "STRIKE GROUP",
-      "deploymentStatus": "STATUS",
-      "usniIntel": "USNI Intel",
-      "usniSource": "Source: USNI News Fleet Tracker",
-      "approximatePosition": "Position approximate — based on USNI weekly report, not real-time AIS.",
-      "darkDescription": "⚠ 舰艇进入暗航状态 - AIS信号丢失。可能表明正在执行敏感任务。",
-      "recentTracking": "Recent Tracking",
-      "lastReport": "LATEST",
-      "nearChokepoint": "NEAR CHOKEPOINT",
-      "nearBase": "NEAR BASE",
-      "lastSeen": "LAST SEEN"
-    },
+  "aisDark": "AIS 信号离线",
+  "vessel": "舰艇名称",
+  "speed": "航速",
+  "heading": "航向",
+  "mmsi": "MMSI 识别码",
+  "hull": "舷号",
+  "region": "部署海域",
+  "strikeGroup": "所属编队/打击群",
+  "deploymentStatus": "部署状态",
+  "usniIntel": "USNI 海军情报",
+  "usniSource": "数据源：USNI News 舰队追踪",
+  "approximatePosition": "位置为估算值 —— 基于 USNI 周报数据，非实时 AIS 信号。",
+  "darkDescription": "⚠ 舰艇进入暗航状态 (Dark Mode) - AIS 信号丢失。可能表明正在执行敏感任务或无线电静默。",
+  "recentTracking": "近期追踪记录",
+  "lastReport": "最新报告",
+  "nearChokepoint": "靠近海上咽喉要道",
+  "nearBase": "靠近海军基地",
+  "lastSeen": "最后发现位置"
+},
     "militaryCluster": {
       "flightActivity": {
         "exercise": "军事演习",

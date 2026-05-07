@@ -158,10 +158,10 @@ export function renderNotificationsSettings(host: NotificationsSettingsHost): No
             <div class="us-notif-ch-icon">${icon}</div>
             <div class="us-notif-ch-body">
               <div class="us-notif-ch-name">${name}</div>
-              <div class="us-notif-ch-sub">Use your account email</div>
+              <div class="us-notif-ch-sub">使用您的账户邮箱</div>
             </div>
             <div class="us-notif-ch-actions">
-              <button type="button" class="us-notif-ch-btn us-notif-ch-btn-primary us-notif-email-connect" id="usConnectEmail">Link</button>
+              <button type="button" class="us-notif-ch-btn us-notif-ch-btn-primary us-notif-email-connect" id="usConnectEmail">链接</button>
             </div>
           </div>`;
         }

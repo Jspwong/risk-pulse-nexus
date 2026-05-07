@@ -412,7 +412,7 @@ export class PanelLayoutManager implements AppModule {
           <span class="risksense-logo-text">RiskSense</span>
           <span class="risksense-logo-sub">Risk Immunity Center for Advanced Manufacturing</span>
           <span class="risksense-status-pill">
-            <span class="risksense-pulse"></span>Live Monitoring
+            <span class="risksense-pulse"></span>实时监控
           </span>
         </div>
         <div class="status-indicator">
