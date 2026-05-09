@@ -722,6 +722,56 @@ function gpsjamDevPlugin(): Plugin {
   };
 }
 
+function enterpriseRiskAgentDevPlugin(): Plugin {
+  return {
+    name: 'enterprise-risk-agent-dev',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (req.url !== '/api/enterprise-risk-agent' && !req.url?.startsWith('/api/enterprise-risk-agent?')) {
+          return next();
+        }
+
+        try {
+          const { default: handler } = await import('./api/enterprise-risk-agent.js');
+          const origin = `http://localhost:${server.config.server.port || 3000}`;
+          const requestUrl = new URL(req.url || '/api/enterprise-risk-agent', origin);
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(req.headers)) {
+            if (Array.isArray(value)) headers.set(key, value.join(', '));
+            else if (typeof value === 'string') headers.set(key, value);
+          }
+
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          }
+          const body = chunks.length ? Buffer.concat(chunks) : undefined;
+          const method = req.method || 'GET';
+          const response = await handler(new Request(requestUrl, {
+            method,
+            headers,
+            body: method === 'GET' || method === 'HEAD' ? undefined : body,
+          }));
+
+          res.statusCode = response.status;
+          response.headers.forEach((value, key) => res.setHeader(key, value));
+          const responseBody = Buffer.from(await response.arrayBuffer());
+          res.end(responseBody);
+        } catch (error) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(JSON.stringify({
+            ok: false,
+            error: 'enterprise_risk_agent_dev_failed',
+            detail: error instanceof Error ? error.message : String(error),
+          }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   // Inject environment variables from .env files into process.env.
@@ -765,6 +815,7 @@ export default defineConfig(({ mode }) => {
       rssProxyPlugin(),
       youtubeLivePlugin(),
       gpsjamDevPlugin(),
+      enterpriseRiskAgentDevPlugin(),
       sebufApiPlugin(),
       brotliPrecompressPlugin(),
       VitePWA({

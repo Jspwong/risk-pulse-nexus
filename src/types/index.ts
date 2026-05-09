@@ -607,6 +607,8 @@ export interface PanelConfig {
   premium?: 'locked' | 'enhanced';
 }
 
+export type * from './enterprise-risk';
+
 export interface MapLayers {
   conflicts: boolean;
   bases: boolean;

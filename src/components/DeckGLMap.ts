@@ -5001,10 +5001,10 @@ export class DeckGLMap {
       <div class="toggle-header">
         <span>${t('components.deckgl.layersTitle')}</span>
         <button class="layer-help-btn" title="${t('components.deckgl.layerGuide')}">?</button>
-        <button class="toggle-collapse">&#9660;</button>
+        <button class="toggle-collapse">&#9654;</button>
       </div>
       <input type="text" class="layer-search" placeholder="${t('components.deckgl.layerSearch')}" autocomplete="off" spellcheck="false" />
-      <div class="toggle-list" style="max-height: 32vh; overflow-y: auto; scrollbar-width: thin;">
+      <div class="toggle-list collapsed" style="max-height: 32vh; overflow-y: auto; scrollbar-width: thin;">
         ${layerConfig.map(({ key, label, icon, premium }) => {
           const isLocked = premium === 'locked' && !premiumUnlocked;
           const isEnhanced = premium === 'enhanced' && !premiumUnlocked;
@@ -5024,6 +5024,8 @@ export class DeckGLMap {
     toggles.appendChild(authorBadge);
 
     this.container.appendChild(toggles);
+    const initialSearchEl = toggles.querySelector('.layer-search') as HTMLElement | null;
+    if (initialSearchEl) initialSearchEl.style.display = 'none';
 
     // Unlock premium layers when Pro status resolves. Pro can come from EITHER:
     //   1. Clerk role === 'pro' (subscribeAuthState fires on Clerk changes)
@@ -5664,9 +5666,6 @@ export class DeckGLMap {
     const hlActive = this.highlightedRouteIds.size > 0;
     const hlIds = this.highlightedRouteIds;
 
-    const dimColor = (c: [number, number, number, number]): [number, number, number, number] =>
-      [c[0], c[1], c[2], 40];
-
     const getColor = (d: TradeRouteSegment): [number, number, number, number] => {
       let base: [number, number, number, number];
       if (scenarioDisrupted && scenarioDisrupted.size > 0) {
@@ -5683,13 +5682,15 @@ export class DeckGLMap {
       } else {
         base = colorFor(d.status);
       }
-      if (hlActive && !hlIds.has(d.routeId)) return dimColor(base);
       return base;
     };
+    const visibleSegments = hlActive
+      ? this.tradeRouteSegments.filter(seg => hlIds.has(seg.routeId))
+      : this.tradeRouteSegments;
 
     return new ArcLayer<TradeRouteSegment>({
       id: 'trade-routes-layer',
-      data: this.tradeRouteSegments,
+      data: visibleSegments,
       getSourcePosition: (d) => d.sourcePosition,
       getTargetPosition: (d) => d.targetPosition,
       getSourceColor: getColor,
@@ -5743,8 +5744,11 @@ export class DeckGLMap {
     const widthFor = (category: string): number =>
       category === 'energy' ? 4 : category === 'container' ? 2.5 : 2;
 
+    const visibleSegments = hlActive
+      ? this.tradeRouteSegments.filter(seg => hlIds.has(seg.routeId))
+      : this.tradeRouteSegments;
     const routeGroups = new Map<string, TradeRouteSegment[]>();
-    for (const seg of this.tradeRouteSegments) {
+    for (const seg of visibleSegments) {
       const existing = routeGroups.get(seg.routeId);
       if (existing) existing.push(seg);
       else routeGroups.set(seg.routeId, [seg]);
@@ -5832,7 +5836,10 @@ export class DeckGLMap {
 
   private createTradeChokepointsLayer(): ScatterplotLayer {
     const routeWaypointIds = new Set<string>();
-    for (const seg of this.tradeRouteSegments) {
+    const visibleSegments = this.highlightedRouteIds.size > 0
+      ? this.tradeRouteSegments.filter(seg => this.highlightedRouteIds.has(seg.routeId))
+      : this.tradeRouteSegments;
+    for (const seg of visibleSegments) {
       const waypoints = ROUTE_WAYPOINTS_MAP.get(seg.routeId);
       if (waypoints) for (const wp of waypoints) routeWaypointIds.add(wp);
     }
@@ -6628,6 +6635,22 @@ export class DeckGLMap {
       this.onLayerChange?.(layer, true, 'programmatic');
       this.enforceLayerLimit();
     }
+  }
+
+  public disableLayer(layer: keyof MapLayers): void {
+    if (!this.state.layers[layer]) return;
+    const prevRadar = this.state.layers.weather;
+    this.state.layers[layer] = false;
+    if (layer === 'military') this.clearFlightTrails();
+    const toggle = this.container.querySelector(`.layer-toggle[data-layer="${layer}"] input`) as HTMLInputElement | null;
+    if (toggle) toggle.checked = false;
+    if (layer === 'weather' && prevRadar) this.stopWeatherRadar();
+    if (layer === 'flights') this.manageAircraftTimer(false);
+    if (layer === 'tradeRoutes') this.clearHighlightedRoute();
+    this.render();
+    this.updateLegend();
+    this.onLayerChange?.(layer, false, 'programmatic');
+    this.enforceLayerLimit();
   }
 
   // Toggle layer on/off programmatically

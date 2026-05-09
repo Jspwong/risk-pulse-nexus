@@ -860,6 +860,15 @@ export class MapContainer {
     }
   }
 
+  public disableLayer(layer: keyof MapLayers): void {
+    if (this.useGlobe) { this.globeMap?.disableLayer(layer); return; }
+    if (this.useDeckGL) {
+      this.deckGLMap?.disableLayer(layer);
+    } else {
+      this.svgMap?.disableLayer(layer);
+    }
+  }
+
   public triggerHotspotClick(id: string): void {
     if (this.useDeckGL) {
       this.deckGLMap?.triggerHotspotClick(id);

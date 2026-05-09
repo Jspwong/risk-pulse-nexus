@@ -9,11 +9,10 @@ import type { TheaterPostureSummary } from '@/services/military-surge';
 import {
   NewsPanel,
   LiveNewsPanel,
+  LiveWebcamsPanel,
   getDefaultLiveChannels,
   loadChannelsFromStorage,
   CIIPanel,
-  CascadePanel,
-  StrategicRiskPanel,
   AviationCommandBar,
 } from '@/components';
 import { debounce, saveToStorage, loadFromStorage } from '@/utils';
@@ -116,6 +115,7 @@ export class PanelLayoutManager implements AppModule {
   private proBlockUnsubscribe: (() => void) | null = null;
   private proBlockEntitlementUnsubscribe: (() => void) | null = null;
   private boundWidgetCreatorHandler: ((e: Event) => void) | null = null;
+  private boundEnterpriseRiskFocusHandler: ((e: Event) => void) | null = null;
   private unsubscribeEntitlementChange: (() => void) | null = null;
   private unsubscribePaymentFailureBanner: (() => void) | null = null;
 
@@ -270,6 +270,32 @@ export class PanelLayoutManager implements AppModule {
       });
     }) as EventListener;
     this.ctx.container.addEventListener('wm:open-widget-creator', this.boundWidgetCreatorHandler);
+
+    this.boundEnterpriseRiskFocusHandler = ((e: CustomEvent<{
+      title?: string;
+      location?: { lat: number; lon: number; label?: string; zoom?: number };
+      impactPath?: { routeIds?: string[] };
+    }>) => {
+      const location = e.detail.location;
+      const routeIds = e.detail.impactPath?.routeIds?.filter((id): id is string => typeof id === 'string' && id.length > 0) ?? [];
+      if (routeIds.length > 0) {
+        this.ctx.map?.enableLayer('tradeRoutes');
+        this.ctx.mapLayers.tradeRoutes = true;
+        this.ctx.map?.highlightRoute(routeIds);
+        window.setTimeout(() => this.ctx.map?.zoomToRoutes(routeIds), 60);
+      } else {
+        this.ctx.map?.clearHighlightedRoute();
+        this.ctx.map?.disableLayer('tradeRoutes');
+        this.ctx.mapLayers.tradeRoutes = false;
+      }
+      if (!location || !Number.isFinite(location.lat) || !Number.isFinite(location.lon)) return;
+      const zoom = location.zoom ?? 5;
+      if (routeIds.length === 0) {
+        this.ctx.map?.setCenter(location.lat, location.lon, zoom);
+      }
+      this.ctx.map?.flashLocation(location.lat, location.lon, 2600);
+    }) as EventListener;
+    this.ctx.container.addEventListener('wm:enterprise-risk-focus-location', this.boundEnterpriseRiskFocusHandler);
   }
 
   destroy(): void {
@@ -284,6 +310,10 @@ export class PanelLayoutManager implements AppModule {
     if (this.boundWidgetCreatorHandler) {
       this.ctx.container.removeEventListener('wm:open-widget-creator', this.boundWidgetCreatorHandler);
       this.boundWidgetCreatorHandler = null;
+    }
+    if (this.boundEnterpriseRiskFocusHandler) {
+      this.ctx.container.removeEventListener('wm:enterprise-risk-focus-location', this.boundEnterpriseRiskFocusHandler);
+      this.boundEnterpriseRiskFocusHandler = null;
     }
     this.panelDragCleanupHandlers.forEach((cleanup) => cleanup());
     this.panelDragCleanupHandlers = [];
@@ -755,9 +785,8 @@ export class PanelLayoutManager implements AppModule {
     this.createNewsPanel('politics', 'panels.politics');
 
     // ── Enterprise Internal Risk Mapping (Core Panel) ──
-    if (this.shouldCreatePanel('live-webcams')) {
-      this.ctx.panels['live-webcams'] = new EnterpriseRiskPanel();
-    }
+    this.createPanel('enterprise-risk', () => new EnterpriseRiskPanel());
+    this.createPanel('live-webcams', () => new LiveWebcamsPanel());
 
     // ── National Instability Index ──
     if (this.shouldCreatePanel('cii')) {
@@ -772,17 +801,9 @@ export class PanelLayoutManager implements AppModule {
     }
 
     // ── Infrastructure Cascade Risk ──
-    this.createPanel('cascade', () => new CascadePanel());
+    // Hidden for the enterprise-risk demo layout.
 
     // ── Strategic Risk Overview ──
-    if (this.shouldCreatePanel('strategic-risk')) {
-      const strategicRiskPanel = new StrategicRiskPanel();
-      strategicRiskPanel.setLocationClickHandler((lat, lon) => {
-        this.ctx.map?.setCenter(lat, lon, 4);
-      });
-      this.ctx.panels['strategic-risk'] = strategicRiskPanel;
-    }
-
     // ── US Regional Intelligence Feed ──
     this.createNewsPanel('us', 'panels.us');
 
@@ -923,11 +944,18 @@ export class PanelLayoutManager implements AppModule {
           allOrder.unshift('live-news');
         }
 
-        const webcamsIdx = allOrder.indexOf('live-webcams');
-        if (webcamsIdx !== -1 && webcamsIdx !== allOrder.indexOf('live-news') + 1) {
-          allOrder.splice(webcamsIdx, 1);
+        const enterpriseIdx = allOrder.indexOf('enterprise-risk');
+        if (enterpriseIdx !== -1 && enterpriseIdx !== allOrder.indexOf('live-news') + 1) {
+          allOrder.splice(enterpriseIdx, 1);
           const afterNews = allOrder.indexOf('live-news') + 1;
-          allOrder.splice(afterNews, 0, 'live-webcams');
+          allOrder.splice(afterNews, 0, 'enterprise-risk');
+        }
+
+        const webcamsIdx = allOrder.indexOf('live-webcams');
+        if (webcamsIdx !== -1 && webcamsIdx !== allOrder.indexOf('enterprise-risk') + 1) {
+          allOrder.splice(webcamsIdx, 1);
+          const afterEnterprise = allOrder.indexOf('enterprise-risk') + 1;
+          allOrder.splice(afterEnterprise, 0, 'live-webcams');
         }
       }
 

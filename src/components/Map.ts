@@ -173,6 +173,7 @@ export class MapComponent {
   private lastRenderTime = 0;
   private readonly MIN_RENDER_INTERVAL_MS = 100;
   private healthCheckLoop: SmartPollLoopHandle | null = null;
+  private centerAnimationFrame: number | null = null;
 
   constructor(container: HTMLElement, initialState: MapState) {
     this.container = container;
@@ -273,6 +274,10 @@ export class MapComponent {
   public destroy(): void {
     window.removeEventListener('theme-changed', this.handleThemeChange);
     document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+    if (this.centerAnimationFrame !== null) {
+      cancelAnimationFrame(this.centerAnimationFrame);
+      this.centerAnimationFrame = null;
+    }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
@@ -374,7 +379,7 @@ export class MapComponent {
 
   private createLayerToggles(): HTMLElement {
     const toggles = document.createElement('div');
-    toggles.className = 'layer-toggles';
+    toggles.className = 'layer-toggles svg-layer-toggles collapsed';
     toggles.id = 'layerToggles';
 
     // RiskSense: 4 risk categories for overseas manufacturing enterprises
@@ -458,6 +463,23 @@ export class MapComponent {
     };
 
     const MAX_SVG_LAYERS = 9;
+    const header = document.createElement('div');
+    header.className = 'svg-layer-header';
+    const title = document.createElement('span');
+    title.textContent = t('components.deckgl.layersTitle');
+    const collapseBtn = document.createElement('button');
+    collapseBtn.className = 'svg-layer-collapse';
+    collapseBtn.type = 'button';
+    collapseBtn.textContent = '▶';
+    collapseBtn.setAttribute('aria-label', t('components.deckgl.layersTitle'));
+    collapseBtn.addEventListener('click', () => {
+      const collapsed = toggles.classList.toggle('collapsed');
+      collapseBtn.textContent = collapsed ? '▶' : '▼';
+    });
+    header.appendChild(title);
+    header.appendChild(collapseBtn);
+    toggles.appendChild(header);
+
     const enforceLayerLimit = () => {
       const allBtns = Array.from(toggles.querySelectorAll<HTMLButtonElement>('.layer-toggle'));
       const activeBtns = allBtns.filter(b => b.classList.contains('active'));
@@ -3605,6 +3627,16 @@ export class MapComponent {
     }
   }
 
+  public disableLayer(layer: keyof MapLayers): void {
+    if (!this.state.layers[layer]) return;
+    this.state.layers[layer] = false;
+    delete this.layerZoomOverrides[layer];
+    const btn = this.container.querySelector(`[data-layer="${layer}"]`);
+    btn?.classList.remove('active', 'loading');
+    this.onLayerChange?.(layer, false, 'programmatic');
+    this.render();
+  }
+
   public highlightAssets(assets: RelatedAsset[] | null): void {
     (Object.keys(this.highlightedAssets) as AssetType[]).forEach((type) => {
       this.highlightedAssets[type].clear();
@@ -3858,13 +3890,42 @@ export class MapComponent {
     // pos*zoom + tx = width/2 → tx = width/2 - pos*zoom
     // Solving: (width/2)(1-zoom) + pan*zoom = width/2 - pos*zoom
     // → pan = width/2 - pos (independent of zoom)
-    this.state.pan = {
+    const targetPan = {
       x: width / 2 - pos[0],
       y: height / 2 - pos[1],
     };
-    this.applyTransform();
-    // Ensure base layer is intact after pan
-    this.ensureBaseLayerIntact();
+    this.animatePanTo(targetPan, 700);
+  }
+
+  private animatePanTo(targetPan: { x: number; y: number }, durationMs: number): void {
+    if (this.centerAnimationFrame !== null) {
+      cancelAnimationFrame(this.centerAnimationFrame);
+      this.centerAnimationFrame = null;
+    }
+
+    const startPan = { ...this.state.pan };
+    const startedAt = performance.now();
+    const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+    const step = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / durationMs);
+      const eased = easeOutCubic(progress);
+      this.state.pan = {
+        x: startPan.x + (targetPan.x - startPan.x) * eased,
+        y: startPan.y + (targetPan.y - startPan.y) * eased,
+      };
+      this.applyTransform();
+
+      if (progress < 1) {
+        this.centerAnimationFrame = requestAnimationFrame(step);
+        return;
+      }
+
+      this.centerAnimationFrame = null;
+      this.ensureBaseLayerIntact();
+    };
+
+    this.centerAnimationFrame = requestAnimationFrame(step);
   }
 
   public setLayers(layers: MapLayers): void {

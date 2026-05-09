@@ -117,6 +117,13 @@ import { fetchClimateAnomalies } from '@/services/climate';
 import { fetchSecurityAdvisories } from '@/services/security-advisories';
 import { fetchThermalEscalations } from '@/services/thermal-escalation';
 import { fetchCrossSourceSignals } from '@/services/cross-source-signals';
+import {
+  applyEnterpriseRiskAgentResult,
+  buildEnterpriseRiskAssessment,
+  markEnterpriseRiskAgentFallback,
+  markEnterpriseRiskAgentRunning,
+} from '@/services/enterprise-risk';
+import { fetchEnterpriseRiskAgentBatch } from '@/services/enterprise-risk-agent-client';
 import { fetchTelegramFeed } from '@/services/telegram-intel';
 import { fetchOrefAlerts, startOrefPolling, stopOrefPolling, onOrefAlertsUpdate } from '@/services/oref-alerts';
 import { getResilienceRanking } from '@/services/resilience';
@@ -164,6 +171,7 @@ import {
   AAIISentimentPanel,
   MarketBreadthPanel,
 } from '@/components';
+import type { EnterpriseRiskPanel } from '@/components/EnterpriseRiskPanel';
 import { SatelliteFiresPanel } from '@/components/SatelliteFiresPanel';
 import { classifyNewsItem } from '@/services/positive-classifier';
 import { fetchGivingSummary } from '@/services/giving';
@@ -287,6 +295,13 @@ export class DataLoaderManager implements AppModule {
   private dailyBriefFrameworkUnsubscribe: (() => void) | null = null;
   private marketImplicationsFrameworkUnsubscribe: (() => void) | null = null;
   private cachedSatRecs: SatRecEntry[] | null = null;
+  private latestCrossSourceSignals: Awaited<ReturnType<typeof fetchCrossSourceSignals>> | null = null;
+  private latestSupplyChainData: {
+    shipping?: Awaited<ReturnType<typeof fetchShippingRates>> | null;
+    chokepoints?: Awaited<ReturnType<typeof fetchChokepointStatus>> | null;
+    minerals?: Awaited<ReturnType<typeof fetchCriticalMinerals>> | null;
+    stress?: Awaited<ReturnType<typeof fetchShippingStress>> | null;
+  } = {};
 
   private digestBreaker = { state: 'closed' as 'closed' | 'open' | 'half-open', failures: 0, cooldownUntil: 0 };
   private readonly digestRequestTimeoutMs = 8000;
@@ -446,7 +461,7 @@ export class DataLoaderManager implements AppModule {
 
     // Happy variant only loads news data -- skip all geopolitical/financial/military data
     if (SITE_VARIANT !== 'happy') {
-      if (shouldLoadAny(['markets', 'heatmap', 'commodities', 'crypto', 'energy-complex', 'crypto-heatmap', 'defi-tokens', 'ai-tokens', 'other-tokens'])) {
+      if (shouldLoadAny(['markets', 'heatmap', 'commodities', 'crypto', 'energy-complex', 'crypto-heatmap', 'defi-tokens', 'ai-tokens', 'other-tokens', 'enterprise-risk'])) {
         tasks.push({ name: 'markets', task: runGuarded('markets', () => this.loadMarkets()) });
       }
       if (hasPremiumAccess() && shouldLoad('stock-analysis')) {
@@ -481,7 +496,7 @@ export class DataLoaderManager implements AppModule {
         if (shouldLoad('trade-policy')) {
           tasks.push({ name: 'tradePolicy', task: runGuarded('tradePolicy', () => this.loadTradePolicy()) });
         }
-        if (shouldLoad('supply-chain')) {
+        if (shouldLoad('supply-chain') || shouldLoad('enterprise-risk')) {
           tasks.push({ name: 'supplyChain', task: runGuarded('supplyChain', () => this.loadSupplyChain()) });
         }
       }
@@ -595,7 +610,7 @@ export class DataLoaderManager implements AppModule {
     if (SITE_VARIANT !== 'happy' && shouldLoad('thermal-escalation')) {
       tasks.push({ name: 'thermalEscalation', task: runGuarded('thermalEscalation', () => this.loadThermalEscalations()) });
     }
-    if (SITE_VARIANT !== 'happy' && shouldLoad('cross-source-signals')) {
+    if (SITE_VARIANT !== 'happy' && (shouldLoad('cross-source-signals') || shouldLoad('enterprise-risk'))) {
       tasks.push({ name: 'crossSourceSignals', task: runGuarded('crossSourceSignals', () => this.loadCrossSourceSignals()) });
     }
 
@@ -616,6 +631,7 @@ export class DataLoaderManager implements AppModule {
     }
 
     this.updateSearchIndex();
+    this.refreshEnterpriseRiskAssessment();
 
     if (hasPremiumAccess()) {
       await Promise.allSettled([
@@ -1211,6 +1227,8 @@ export class DataLoaderManager implements AppModule {
         this.ctx.mapLayers.kindness ? Promise.resolve(this.loadKindnessData()) : Promise.resolve(),
       ]);
     }
+
+    this.refreshEnterpriseRiskAssessment();
   }
 
   async loadStockAnalysis(): Promise<void> {
@@ -2868,6 +2886,12 @@ export class DataLoaderManager implements AppModule {
       const chokepointData = chokepoints.status === 'fulfilled' ? chokepoints.value : null;
       const mineralsData = minerals.status === 'fulfilled' ? minerals.value : null;
       const stressData = stress.status === 'fulfilled' ? stress.value : null;
+      this.latestSupplyChainData = {
+        shipping: shippingData,
+        chokepoints: chokepointData,
+        minerals: mineralsData,
+        stress: stressData,
+      };
 
       if (shippingData) scPanel.updateShippingRates(shippingData);
       if (chokepointData) scPanel.updateChokepointStatus(chokepointData);
@@ -2885,6 +2909,7 @@ export class DataLoaderManager implements AppModule {
       } else if (anyUnavailable) {
         dataFreshness.recordError('supply_chain', 'Supply chain upstream temporarily unavailable');
       }
+      this.refreshEnterpriseRiskAssessment();
     } catch (e) {
       console.error('[App] Supply chain failed:', e);
       this.callPanel('supply-chain', 'showError', undefined, () => void this.loadSupplyChain());
@@ -3359,11 +3384,51 @@ export class DataLoaderManager implements AppModule {
   async loadCrossSourceSignals(): Promise<void> {
     try {
       const result = await fetchCrossSourceSignals();
+      this.latestCrossSourceSignals = result;
       this.callPanel('cross-source-signals', 'setData', result);
       dataFreshness.recordUpdate('cross-source-signals' as DataSourceId, result.signals?.length ?? 0);
+      this.refreshEnterpriseRiskAssessment();
     } catch (error) {
       console.error('[App] Cross-source signals fetch failed:', error);
       this.callPanel('cross-source-signals', 'showFetchError');
     }
+  }
+
+  private enterpriseRiskAgentRunId = 0;
+
+  private refreshEnterpriseRiskAssessment(): void {
+    const panel = this.ctx.panels['enterprise-risk'] as EnterpriseRiskPanel | undefined;
+    if (!panel) return;
+
+    const assessment = buildEnterpriseRiskAssessment({
+      news: this.ctx.allNews,
+      clusters: this.ctx.latestClusters,
+      crossSourceSignals: this.latestCrossSourceSignals,
+      supplyChain: {
+        shippingIndices: this.latestSupplyChainData.shipping?.indices ?? [],
+        chokepoints: this.latestSupplyChainData.chokepoints?.chokepoints ?? [],
+        minerals: this.latestSupplyChainData.minerals?.minerals ?? [],
+        shippingStress: this.latestSupplyChainData.stress ?? null,
+      },
+      markets: this.ctx.latestMarkets,
+    });
+    panel.setAssessment(assessment);
+
+    const runId = ++this.enterpriseRiskAgentRunId;
+    const runningAssessment = markEnterpriseRiskAgentRunning(assessment);
+    panel.setAssessment(runningAssessment);
+    void fetchEnterpriseRiskAgentBatch(runningAssessment)
+      .then((agentResult) => {
+        if (runId !== this.enterpriseRiskAgentRunId) return;
+        if (!agentResult || agentResult.events.length === 0) {
+          panel.setAssessment(markEnterpriseRiskAgentFallback(runningAssessment));
+          return;
+        }
+        panel.setAssessment(applyEnterpriseRiskAgentResult(runningAssessment, agentResult));
+      })
+      .catch(() => {
+        if (runId !== this.enterpriseRiskAgentRunId) return;
+        panel.setAssessment(markEnterpriseRiskAgentFallback(runningAssessment));
+      });
   }
 }

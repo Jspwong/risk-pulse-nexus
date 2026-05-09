@@ -1,383 +1,488 @@
 import { Panel } from './Panel';
+import type {
+  EnterpriseAlert,
+  EnterpriseInternalImpact,
+  EnterpriseReportSummary,
+  EnterpriseRiskAssessment,
+  EnterpriseRiskEvent,
+  EnterpriseRiskPriority,
+  EnterpriseTask,
+  EnterpriseTaskStatus,
+} from '@/types/enterprise-risk';
+import { enterpriseRiskTagLabel } from '@/services/enterprise-risk';
+import { escapeHtml, sanitizeUrl } from '@/utils/sanitize';
 
-interface RiskItem {
-  label: string;
-  value: string;
-  trend: 'up' | 'down' | 'stable';
-  severity: 'critical' | 'high' | 'medium' | 'low';
+function priorityClass(priority: EnterpriseRiskPriority): string {
+  return priority.toLowerCase();
 }
 
-interface RiskCategory {
-  id: string;
-  title: string;
-  icon: string;
-  score: number;       // 0-100
-  delta: number;       // 与上周相比变化
-  items: RiskItem[];
+function priorityLabel(priority: EnterpriseRiskPriority): string {
+  return priority === 'P1' ? 'P1 Immediate' : priority === 'P2' ? 'P2 Watch' : 'P3 Monitor';
 }
 
-interface RiskEvent {
-  time: string;
-  category: string;
-  categoryColor: string;
-  message: string;
-  level: 'critical' | 'high' | 'medium';
+function relativeAge(ts: number): string {
+  const diff = Math.max(0, Date.now() - ts);
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  return `${Math.floor(minutes / 60)}h ago`;
 }
 
-// 模拟企业风险数据
-const RISK_DATA: RiskCategory[] = [
-  {
-    id: 'geopolitical',
-    title: '地缘政治风险',
-    icon: '🌐',
-    score: 72,
-    delta: +8,
-    items: [
-      { label: '中东局势紧张', value: '高风险', trend: 'up', severity: 'critical' },
-      { label: '俄乌冲突影响', value: '持续中', trend: 'stable', severity: 'high' },
-      { label: '台海贸易航线', value: '需关注', trend: 'up', severity: 'high' },
-      { label: '东南亚政治稳定性', value: '中等', trend: 'stable', severity: 'medium' },
-    ],
-  },
-  {
-    id: 'supply-chain',
-    title: '供应链中断风险',
-    icon: '🔗',
-    score: 58,
-    delta: -4,
-    items: [
-      { label: '红海航线绕行', value: '持续中', trend: 'stable', severity: 'critical' },
-      { label: '关键原材料库存', value: '低（-12%）', trend: 'down', severity: 'high' },
-      { label: '港口拥堵指数', value: '上海/宁波', trend: 'up', severity: 'medium' },
-      { label: '物流成本指数', value: '同比 +23%', trend: 'up', severity: 'medium' },
-    ],
-  },
-  {
-    id: 'compliance',
-    title: '合规与政策风险',
-    icon: '📋',
-    score: 45,
-    delta: +12,
-    items: [
-      { label: '欧盟CBAM碳边境税', value: '2026全面实施', trend: 'up', severity: 'critical' },
-      { label: '美国出口管制更新', value: '芯片/AI设备', trend: 'up', severity: 'high' },
-      { label: '目标市场劳动法', value: '3项待审核', trend: 'stable', severity: 'medium' },
-      { label: '数据本地化要求', value: '印度/越南', trend: 'up', severity: 'medium' },
-    ],
-  },
-  {
-    id: 'fx',
-    title: '汇率波动风险',
-    icon: '💱',
-    score: 38,
-    delta: -6,
-    items: [
-      { label: '美元/人民币波动', value: '7.24 ±0.08', trend: 'stable', severity: 'medium' },
-      { label: '越南盾 VND', value: '本月 -3.2%', trend: 'down', severity: 'high' },
-      { label: '印度卢比 INR', value: '本月 -1.8%', trend: 'down', severity: 'medium' },
-      { label: '欧元 EUR/USD', value: '1.082 稳定', trend: 'stable', severity: 'low' },
-    ],
-  },
-];
-
-// 模拟实时风险事件流
-const EVENT_POOL: Omit<RiskEvent, 'time'>[] = [
-  { category: '地缘政治', categoryColor: '#ef4444', message: '中东局势升级 —— 霍尔木兹海峡运输风险上升', level: 'critical' },
-  { category: '供应链', categoryColor: '#f97316', message: '红海绕行导致欧洲航线延误增加14天', level: 'high' },
-  { category: '合规政策', categoryColor: '#eab308', message: 'CBAM碳关税申报窗口开启 —— 越南工厂需提交排放数据', level: 'high' },
-  { category: '汇率风险', categoryColor: '#22d3a0', message: '越南盾日内跌超1.2% —— 工厂汇率敞口扩大', level: 'medium' },
-  { category: '地缘政治', categoryColor: '#ef4444', message: '东南亚多国临近选举 —— 政策不确定性上升', level: 'high' },
-  { category: '供应链', categoryColor: '#f97316', message: '宁波港集装箱积压指数创六个月新高', level: 'high' },
-  { category: '合规政策', categoryColor: '#eab308', message: '印度数据本地化法规生效 —— 系统需在90天内完成整改', level: 'critical' },
-  { category: '汇率风险', categoryColor: '#22d3a0', message: '印度卢比跌破84兑美元 —— 海外利润回流承压', level: 'medium' },
-  { category: '地缘政治', categoryColor: '#ef4444', message: '美国扩大出口管制名单 —— 新增12类工业设备', level: 'critical' },
-  { category: '供应链', categoryColor: '#f97316', message: '锂现货价格周涨8.3% —— 库存告急', level: 'critical' },
-  { category: '合规政策', categoryColor: '#eab308', message: '欧盟CSRD可持续披露要求扩展至供应商', level: 'medium' },
-  { category: '汇率风险', categoryColor: '#22d3a0', message: 'EUR/USD突破1.09 —— 欧洲应收账款汇兑收益改善', level: 'medium' },
-];
-
-function severityColor(s: RiskItem['severity']): string {
-  return { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#22c55e' }[s];
+function formatUsd(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
 }
 
-function scoreColor(score: number): string {
-  if (score >= 70) return '#ef4444';
-  if (score >= 50) return '#f97316';
-  if (score >= 30) return '#eab308';
-  return '#22c55e';
-}
-
-function trendArrow(trend: RiskItem['trend']): string {
-  return { up: '↑', down: '↓', stable: '→' }[trend];
-}
-
-function deltaLabel(delta: number): string {
-  const sign = delta > 0 ? '+' : '';
-  return `${sign}${delta}`;
-}
-
-function nowHHMM(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-}
-
-// 数字动态增长动画
-function animateCount(el: HTMLElement, target: number, duration = 900): void {
-  const start = performance.now();
-
-  const step = (now: number) => {
-    const t = Math.min((now - start) / duration, 1);
-
-    // ease-out cubic
-    const eased = 1 - Math.pow(1 - t, 3);
-
-    el.textContent = String(Math.round(eased * target));
-
-    if (t < 1) requestAnimationFrame(step);
-  };
-
-  requestAnimationFrame(step);
+function estimateEventExposure(event: EnterpriseRiskEvent, impacts: EnterpriseInternalImpact[]): number {
+  const baseByPriority = event.priority === 'P1' ? 7_200_000 : event.priority === 'P2' ? 3_600_000 : 1_200_000;
+  const departmentFactor = Math.max(1, new Set(impacts.map(impact => impact.department)).size) * 0.18;
+  const severityFactor = Math.max(0.3, Math.min(1.15, event.severityScore / 90));
+  return Math.round(baseByPriority * departmentFactor * severityFactor);
 }
 
 export class EnterpriseRiskPanel extends Panel {
-  private refreshTimer: ReturnType<typeof setInterval> | null = null;
-  private eventTimer: ReturnType<typeof setInterval> | null = null;
-  private feedEl: HTMLElement | null = null;
-  private eventIndex = 0;
+  private assessment: EnterpriseRiskAssessment | null = null;
+  private selectedEventId: string | null = null;
+  private acknowledgedAlertIds = new Set<string>();
+  private taskStatusOverrides = new Map<string, EnterpriseTaskStatus>();
+  private readonly acknowledgedStorageKey = 'wm.enterpriseRisk.acknowledgedAlerts';
+  private readonly taskStorageKey = 'wm.enterpriseRisk.taskStatusOverrides';
 
   constructor() {
     super({
-      id: 'live-webcams',
-      title: '企业风险地图',
-      className: 'panel-wide',
+      id: 'enterprise-risk',
+      title: 'Enterprise Risk Immunity Center',
+      className: 'panel-wide col-span-3 enterprise-risk-panel-shell',
+      defaultRowSpan: 3,
       closable: true,
       collapsible: true,
-      infoTooltip:
-        '<strong>企业风险地图</strong> 实时聚合地缘政治、供应链、合规政策及汇率风险信号，用于海外先进制造企业风险监测。',
+      infoTooltip: 'Maps external news, cross-source signals, supply-chain and market data into internal alerts, tasks and report summaries.',
     });
+    this.content.addEventListener('click', (event) => this.handleClick(event));
+    this.content.addEventListener('keydown', (event) => this.handleKeydown(event));
+    this.loadInteractionState();
+    this.showLoading('Linking external signals to enterprise response...');
+  }
 
+  public setAssessment(assessment: EnterpriseRiskAssessment): void {
+    this.assessment = assessment;
+    if (!assessment.events.some(event => event.id === this.selectedEventId)) {
+      this.selectedEventId = assessment.events[0]?.id ?? null;
+    }
+    this.setCount?.(assessment.alerts.length);
+    const top = assessment.events[0]?.priority;
+    this.setSeverity(top === 'P1' ? 'critical' : top === 'P2' ? 'high' : 'medium');
     this.render();
-
-    // 每60秒刷新卡片
-    this.refreshTimer = setInterval(() => this.refreshCards(), 60_000);
-
-    // 每2.5秒推送一个新事件
-    this.eventTimer = setInterval(() => this.pushEvent(), 2_500);
   }
 
   private render(): void {
-    this.content.innerHTML = '';
-    this.content.className = 'panel-content enterprise-risk-content';
-
-    // 风险卡片区域
-    const grid = document.createElement('div');
-    grid.className = 'enterprise-risk-grid';
-
-    for (const cat of RISK_DATA) {
-      grid.appendChild(this.buildCard(cat));
+    if (!this.assessment) {
+      this.showLoading('Waiting for enterprise risk assessment...');
+      return;
     }
 
-    this.content.appendChild(grid);
+    const { assessment } = this;
+    const selectedEvent = this.getSelectedEvent();
+    const visibleImpacts = this.getVisibleImpacts();
+    const visibleAlerts = this.getVisibleAlerts();
+    const visibleTasks = this.getVisibleTasks();
+    const selectedReport = this.buildSelectedReport(assessment.report, selectedEvent, visibleImpacts, visibleTasks);
+    const pinnedEvents = assessment.events.filter(event => event.isDemoSeed);
+    const liveEvents = assessment.events.filter(event => !event.isDemoSeed);
+    const rssCoverage = assessment.sourceCoverage.find(source => source.id === 'rss');
+    const p1Count = assessment.alerts.filter(alert => alert.priority === 'P1').length;
+    const activeTaskCount = assessment.tasks.filter(task => this.getTaskStatus(task) !== 'done').length;
+    const liveSources = assessment.sourceCoverage.filter(source => source.status === 'live').length;
 
-    // 实时事件流
-    const feedSection = document.createElement('div');
-    feedSection.className = 'risk-feed-section';
+    this.setContent(`
+      <div class="enterprise-risk-v2">
+        <div class="er-hero">
+          <div class="er-hero-main">
+            <div class="er-kicker">Clickable closed loop · ${escapeHtml(assessment.profile.scenarioName)}</div>
+            <h3>${escapeHtml(assessment.profile.companyName)}</h3>
+            <p>${escapeHtml(assessment.profile.primaryNarrative)}</p>
+          </div>
+          <div class="er-hero-metrics">
+            <button class="er-metric er-metric-hot" type="button" data-er-action="select-p1"><span>${p1Count}</span><label>P1 alerts</label></button>
+            <button class="er-metric" type="button" data-er-action="focus-tasks"><span>${activeTaskCount}</span><label>active tasks</label></button>
+            <button class="er-metric" type="button" data-er-action="focus-report"><span>${formatUsd(selectedReport.financialImpact.exposureUsd)}</span><label>exposure</label></button>
+            <div class="er-metric"><span>${liveSources}/${assessment.sourceCoverage.length}</span><label>live sources</label></div>
+          </div>
+        </div>
 
-    const feedHeader = document.createElement('div');
-    feedHeader.className = 'risk-feed-header';
+        <div class="er-demo-banner">
+          Demo 主线固定保留；Live 外部事件最多追加 5 条。识别层和传导层由 Qwen Agent 接管，规则层仅作为候选和失败兜底。
+          <span class="er-agent-status er-agent-${escapeHtml(assessment.agentWorkflow.status)}">${escapeHtml(assessment.agentWorkflow.detail)}</span>
+        </div>
 
-    feedHeader.innerHTML = `
-      <span class="risk-feed-pulse"></span>
-      <span class="risk-feed-title">实时风险事件流</span>
-      <span class="risk-feed-badge">实时</span>
-    `;
+        ${selectedEvent ? this.renderSelectedFlow(selectedEvent, visibleImpacts, visibleAlerts, visibleTasks, selectedReport) : ''}
 
-    const feedList = document.createElement('div');
-    feedList.className = 'risk-feed-list';
+        <div class="er-report" id="enterpriseRiskReport">
+          <div class="er-section-title">Auto Report Summary</div>
+          ${selectedEvent ? `<div class="er-selected-context">Selected trigger: <strong>${escapeHtml(selectedEvent.title)}</strong></div>` : ''}
+          <div class="er-report-grid">
+            <div><strong>Event summary</strong><p>${escapeHtml(selectedReport.eventSummary)}</p></div>
+            <div><strong>Internal impact</strong><p>${escapeHtml(selectedReport.internalImpact)}</p></div>
+            <div><strong>Recommended actions</strong><ul>${selectedReport.recommendedActions.map(action => `<li>${escapeHtml(action)}</li>`).join('')}</ul></div>
+            <div><strong>Financial impact</strong><p>${escapeHtml(selectedReport.financialImpact.estimate)} <span class="er-confidence">${escapeHtml(selectedReport.financialImpact.confidence)}</span></p></div>
+          </div>
+        </div>
 
-    this.feedEl = feedList;
+        <section class="er-section er-section-events er-events-full">
+          <div class="er-event-list-head">
+            <div>
+              <div class="er-section-title">Event List</div>
+              <div class="er-event-list-subtitle">Pinned demo storyline + live external context</div>
+            </div>
+            <span>${assessment.events.length} cards</span>
+          </div>
+          <div class="er-event-list-grid">
+            ${pinnedEvents.map(event => this.renderEvent(event)).join('')}
+            ${liveEvents.length ? liveEvents.map(event => this.renderEvent(event)).join('') : `<div class="er-empty">No live risk candidates yet. ${escapeHtml(rssCoverage?.detail ?? 'External feeds are still loading.')}</div>`}
+          </div>
+        </section>
 
-    feedSection.appendChild(feedHeader);
-    feedSection.appendChild(feedList);
+        <div class="er-footer">
+          <div class="er-source-strip">
+            ${assessment.sourceCoverage.map(source => `
+              <span class="er-source er-source-${source.status}" title="${escapeHtml(source.detail)}">
+                ${escapeHtml(source.label)}
+              </span>
+            `).join('')}
+          </div>
+          <button class="er-focus-report" type="button" data-er-action="focus-report">Focus report</button>
+          <div class="er-updated">Generated ${new Date(assessment.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+        </div>
+      </div>
+    `);
+  }
 
-    this.content.appendChild(feedSection);
+  private handleClick(event: Event): void {
+    const target = event.target as HTMLElement;
+    if (target.closest('.er-why')) return;
 
-    // 初始化3条事件
-    for (let i = 0; i < 3; i++) {
-      const idx = (EVENT_POOL.length - 3 + i) % EVENT_POOL.length;
-      const ev = EVENT_POOL[idx];
+    const eventCard = target.closest<HTMLElement>('[data-er-event-id]');
+    if (eventCard && !target.closest('a,button')) {
+      this.selectEvent(eventCard.dataset.erEventId ?? null);
+      return;
+    }
 
-      if (ev) {
-        feedList.appendChild(this.buildEventRow(ev, false));
+    const alertButton = target.closest<HTMLButtonElement>('[data-er-alert-id]');
+    if (alertButton) {
+      const alertId = alertButton.dataset.erAlertId;
+      if (alertId) {
+        if (this.acknowledgedAlertIds.has(alertId)) this.acknowledgedAlertIds.delete(alertId);
+        else this.acknowledgedAlertIds.add(alertId);
+        this.persistAcknowledgedAlerts();
+        this.render();
       }
+      return;
     }
 
-    this.eventIndex = 0;
+    const taskButton = target.closest<HTMLButtonElement>('[data-er-task-id]');
+    if (taskButton) {
+      const taskId = taskButton.dataset.erTaskId;
+      const baseTask = this.assessment?.tasks.find(task => task.id === taskId);
+      if (taskId && baseTask) {
+        this.taskStatusOverrides.set(taskId, this.nextTaskStatus(this.getTaskStatus(baseTask)));
+        this.persistTaskStatuses();
+        this.render();
+      }
+      return;
+    }
+
+    const action = target.closest<HTMLElement>('[data-er-action]')?.dataset.erAction;
+    if (action === 'focus-report') {
+      this.content.querySelector('#enterpriseRiskReport')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    if (action === 'focus-tasks') {
+      this.content.querySelector('.er-events-full')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    if (action === 'select-p1') {
+      const p1 = this.assessment?.events.find(item => item.priority === 'P1');
+      if (p1) this.selectEvent(p1.id);
+    }
   }
 
-  private buildCard(cat: RiskCategory): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'enterprise-risk-card';
+  private handleKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target as HTMLElement;
+    if (target.closest('a,button,.er-why')) return;
+    const eventCard = target.closest<HTMLElement>('[data-er-event-id]');
+    if (!eventCard) return;
+    event.preventDefault();
+    this.selectEvent(eventCard.dataset.erEventId ?? null);
+  }
 
-    const color = scoreColor(cat.score);
+  private selectEvent(eventId: string | null): void {
+    this.selectedEventId = eventId;
+    this.dispatchSelectedEventLocation();
+    this.render();
+  }
 
-    const deltaStr = deltaLabel(cat.delta);
+  private dispatchSelectedEventLocation(): void {
+    const selected = this.getSelectedEvent();
+    if (!selected) return;
+    this.element.dispatchEvent(new CustomEvent('wm:enterprise-risk-focus-location', {
+      bubbles: true,
+      detail: {
+        eventId: selected.id,
+        title: selected.title,
+        location: selected.location,
+        impactPath: selected.impactPath,
+      },
+    }));
+  }
 
-    const deltaClass =
-      cat.delta > 0
-        ? 'risk-delta-up'
-        : cat.delta < 0
-        ? 'risk-delta-down'
-        : 'risk-delta-stable';
+  private getSelectedEvent(): EnterpriseRiskEvent | null {
+    if (!this.assessment) return null;
+    return this.assessment.events.find(event => event.id === this.selectedEventId) ?? this.assessment.events[0] ?? null;
+  }
 
-    // 卡片头部
-    const header = document.createElement('div');
-    header.className = 'enterprise-risk-card-header';
+  private getVisibleImpacts(): EnterpriseInternalImpact[] {
+    if (!this.assessment) return [];
+    const selected = this.getSelectedEvent();
+    if (!selected) return this.assessment.impacts;
+    return this.assessment.impacts.filter(impact => impact.eventId === selected.id);
+  }
 
-    const scoreEl = document.createElement('span');
-    scoreEl.className = 'enterprise-risk-score';
-    scoreEl.style.color = color;
-    scoreEl.textContent = '0';
+  private getVisibleAlerts(): EnterpriseAlert[] {
+    if (!this.assessment) return [];
+    const selected = this.getSelectedEvent();
+    if (!selected) return this.assessment.alerts;
+    return this.assessment.alerts.filter(alert => alert.eventId === selected.id);
+  }
 
-    header.innerHTML = `
-      <span class="enterprise-risk-icon">${cat.icon}</span>
-      <span class="enterprise-risk-title">${cat.title}</span>
+  private getVisibleTasks(): EnterpriseTask[] {
+    if (!this.assessment) return [];
+    const selected = this.getSelectedEvent();
+    if (!selected) return this.assessment.tasks;
+    return this.assessment.tasks.filter(task => task.sourceEventId === selected.id);
+  }
+
+  private getTaskStatus(task: EnterpriseTask): EnterpriseTaskStatus {
+    return this.taskStatusOverrides.get(task.id) ?? task.status;
+  }
+
+  private nextTaskStatus(status: EnterpriseTaskStatus): EnterpriseTaskStatus {
+    if (status === 'open') return 'in_progress';
+    if (status === 'in_progress') return 'done';
+    if (status === 'watching') return 'open';
+    return 'open';
+  }
+
+  private buildSelectedReport(
+    baseReport: EnterpriseReportSummary,
+    selectedEvent: EnterpriseRiskEvent | null,
+    impacts: EnterpriseInternalImpact[],
+    tasks: EnterpriseTask[],
+  ): EnterpriseReportSummary {
+    if (!selectedEvent) return baseReport;
+    const departments = Array.from(new Set(impacts.map(impact => impact.department)));
+    const businessLines = Array.from(new Set(impacts.map(impact => impact.businessLineName)));
+    const recommendations = tasks.length
+      ? tasks.slice(0, 5).map(task => task.title)
+      : impacts.slice(0, 4).map(impact => `${impact.department}: ${impact.action}`);
+    const exposure = estimateEventExposure(selectedEvent, impacts);
+    return {
+      ...baseReport,
+      id: `report-${selectedEvent.id}`,
+      eventSummary: selectedEvent.summary,
+      internalImpact: `${selectedEvent.priority} 事件映射到 ${departments.join('、') || '风险办公室'}，影响 ${businessLines.join('、') || '重点业务线'}。`,
+      recommendedActions: recommendations.length ? recommendations : ['继续监控该事件，并在下一次数据刷新后复核内部敞口。'],
+      financialImpact: {
+        exposureUsd: exposure,
+        estimate: `按所选事件强度、部门覆盖和业务线敞口估算，短期影响约 ${formatUsd(exposure)}。`,
+        confidence: selectedEvent.isDemoSeed ? 'demo_estimate' : 'modeled',
+      },
+    };
+  }
+
+  private loadInteractionState(): void {
+    try {
+      const rawAlerts = window.localStorage.getItem(this.acknowledgedStorageKey);
+      if (rawAlerts) {
+        const ids = JSON.parse(rawAlerts);
+        if (Array.isArray(ids)) this.acknowledgedAlertIds = new Set(ids.filter((id): id is string => typeof id === 'string'));
+      }
+      const rawTasks = window.localStorage.getItem(this.taskStorageKey);
+      if (rawTasks) {
+        const entries = JSON.parse(rawTasks);
+        if (Array.isArray(entries)) {
+          this.taskStatusOverrides = new Map(entries.filter((entry): entry is [string, EnterpriseTaskStatus] => {
+            return Array.isArray(entry)
+              && typeof entry[0] === 'string'
+              && ['open', 'in_progress', 'watching', 'done'].includes(entry[1]);
+          }));
+        }
+      }
+    } catch {
+      this.acknowledgedAlertIds = new Set<string>();
+      this.taskStatusOverrides = new Map<string, EnterpriseTaskStatus>();
+    }
+  }
+
+  private persistAcknowledgedAlerts(): void {
+    try {
+      window.localStorage.setItem(this.acknowledgedStorageKey, JSON.stringify(Array.from(this.acknowledgedAlertIds)));
+    } catch {
+      // Local persistence is best-effort for the POC UI.
+    }
+  }
+
+  private persistTaskStatuses(): void {
+    try {
+      window.localStorage.setItem(this.taskStorageKey, JSON.stringify(Array.from(this.taskStatusOverrides.entries())));
+    } catch {
+      // Local persistence is best-effort for the POC UI.
+    }
+  }
+
+  private renderSelectedFlow(
+    event: EnterpriseRiskEvent,
+    impacts: EnterpriseInternalImpact[],
+    alerts: EnterpriseAlert[],
+    tasks: EnterpriseTask[],
+    report: EnterpriseReportSummary,
+  ): string {
+    const agentLine = event.agent?.identificationSource === 'qwen_agent'
+      ? `Qwen output${event.agent.model ? ` · ${event.agent.model}` : ''}${event.agent.confidence != null ? ` · confidence ${(event.agent.confidence * 100).toFixed(0)}%` : ''}`
+      : 'Rule fallback waiting for Qwen output';
+    const transmissionLine = event.agent?.transmissionSource === 'qwen_agent'
+      ? `Qwen transmission mapped ${impacts.length} internal item(s)`
+      : 'Rule fallback transmission candidate';
+    const evidence = event.evidenceSources?.slice(0, 3) ?? [];
+    const evidenceHtml = evidence.length
+      ? evidence.map(source => {
+        const link = source.link ? sanitizeUrl(source.link) : '';
+        const title = `${source.source}: ${source.title}`;
+        return link
+          ? `<li><a href="${link}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)}</a><span>${escapeHtml(source.reason)}</span></li>`
+          : `<li><strong>${escapeHtml(title)}</strong><span>${escapeHtml(source.reason)}</span></li>`;
+      }).join('')
+      : '<li><strong>No external source link</strong><span>Structured internal signal or demo seed.</span></li>';
+    const routeHtml = event.impactPath?.steps.length
+      ? `<div class="er-transmission-route">${event.impactPath.steps.map(step => `<span>${escapeHtml(step)}</span>`).join('<b>→</b>')}</div>`
+      : '<p>No route path mapped yet.</p>';
+    const impactHtml = impacts.length
+      ? impacts.slice(0, 6).map(impact => `
+        <li>
+          <strong>${escapeHtml(impact.businessLineName)}</strong>
+          <span>${escapeHtml(impact.department)}: ${escapeHtml(impact.action)}</span>
+        </li>
+      `).join('')
+      : '<li><strong>No internal mapping yet</strong><span>Waiting for business-line rules.</span></li>';
+
+    return `
+      <section class="er-selected-flow">
+        <div class="er-section-title">Selected Card Closed Loop</div>
+        <div class="er-flow-grid">
+          <div class="er-flow-card">
+            <span class="er-flow-index">1</span>
+            <strong>感知层 · Sensing</strong>
+            <p>${escapeHtml(event.title)}</p>
+            <ul class="er-evidence-list">${evidenceHtml}</ul>
+          </div>
+          <div class="er-flow-card">
+            <span class="er-flow-index">2</span>
+            <strong>识别层 · Qwen Identification Agent</strong>
+            <p class="er-agent-output">${escapeHtml(agentLine)}</p>
+            <p>${escapeHtml(event.tags.map(enterpriseRiskTagLabel).join(' / '))} · ${escapeHtml(event.priority)} · score ${event.severityScore}</p>
+            <ul>${event.explanation.triggerBasis.slice(0, 4).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          </div>
+          <div class="er-flow-card">
+            <span class="er-flow-index">3</span>
+            <strong>传导层 · Qwen Transmission Agent</strong>
+            <p class="er-agent-output">${escapeHtml(transmissionLine)}</p>
+            ${routeHtml}
+            <ul class="er-transmission-list">${impactHtml}</ul>
+          </div>
+          <div class="er-flow-card">
+            <span class="er-flow-index">4</span>
+            <strong>响应层 · Response</strong>
+            <p>${escapeHtml(alerts.length ? alerts[0]!.message : report.financialImpact.estimate)}</p>
+            <ul>${tasks.slice(0, 4).map(task => `<li>${escapeHtml(task.department)}: ${escapeHtml(task.title)}</li>`).join('') || '<li>Monitor and refresh assessment.</li>'}</ul>
+          </div>
+        </div>
+      </section>
     `;
-
-    header.appendChild(scoreEl);
-
-    header.insertAdjacentHTML(
-      'beforeend',
-      `<span class="enterprise-risk-delta ${deltaClass}">${deltaStr}</span>`
-    );
-
-    // 风险进度条
-    const barWrap = document.createElement('div');
-    barWrap.className = 'enterprise-risk-bar-wrap';
-
-    const bar = document.createElement('div');
-    bar.className = 'enterprise-risk-bar';
-    bar.style.width = '0%';
-    bar.style.background = color;
-
-    barWrap.appendChild(bar);
-
-    // 风险项列表
-    const list = document.createElement('ul');
-    list.className = 'enterprise-risk-items';
-
-    for (const item of cat.items) {
-      const li = document.createElement('li');
-
-      li.className = 'enterprise-risk-item';
-
-      li.innerHTML = `
-        <span class="enterprise-risk-dot" style="background:${severityColor(item.severity)}"></span>
-        <span class="enterprise-risk-item-label">${item.label}</span>
-        <span class="enterprise-risk-item-value">${trendArrow(item.trend)} ${item.value}</span>
-      `;
-
-      list.appendChild(li);
-    }
-
-    card.appendChild(header);
-    card.appendChild(barWrap);
-    card.appendChild(list);
-
-    // 动画效果
-    requestAnimationFrame(() => {
-      animateCount(scoreEl, cat.score, 1000);
-
-      bar.style.transition =
-        'width 1s cubic-bezier(0.22, 1, 0.36, 1)';
-
-      bar.style.width = `${cat.score}%`;
-    });
-
-    return card;
   }
 
-  // 仅刷新卡片
-  private refreshCards(): void {
-    const grid = this.content.querySelector('.enterprise-risk-grid');
-
-    if (!grid) return;
-
-    grid.innerHTML = '';
-
-    for (const cat of RISK_DATA) {
-      grid.appendChild(this.buildCard(cat));
-    }
+  private renderEvent(event: EnterpriseRiskEvent): string {
+    const tags = event.tags.map(tag => `<span>${escapeHtml(enterpriseRiskTagLabel(tag))}</span>`).join('');
+    const link = event.link ? sanitizeUrl(event.link) : '';
+    const isSelected = event.id === this.getSelectedEvent()?.id;
+    const sourceLink = link ? ` <a class="er-source-link" href="${link}" target="_blank" rel="noopener noreferrer" title="Open original source">Open source</a>` : '';
+    const mapHint = event.location ? `<div class="er-map-hint">Map target: ${escapeHtml(event.location.label)}</div>` : '';
+    const agentBadge = event.agent?.identificationSource === 'qwen_agent'
+      ? `<span class="er-agent-badge">Qwen refined${event.agent.confidence != null ? ` · ${(event.agent.confidence * 100).toFixed(0)}%` : ''}</span>`
+      : '<span class="er-agent-badge er-agent-fallback">rule fallback</span>';
+    return `
+      <article class="er-event er-card-priority-${priorityClass(event.priority)}${isSelected ? ' er-selected' : ''}" data-er-event-id="${escapeHtml(event.id)}" role="button" tabindex="0">
+        <div class="er-row-top">
+          <span class="er-priority ${priorityClass(event.priority)}">${priorityLabel(event.priority)}</span>
+          <span class="er-age">${isSelected ? 'selected' : escapeHtml(relativeAge(event.occurredAt))}</span>
+        </div>
+        ${agentBadge}
+        <div class="er-event-title">${escapeHtml(event.title)}</div>
+        <div class="er-event-summary">${escapeHtml(event.summary)}</div>
+        <div class="er-tags">${tags}</div>
+        ${mapHint}
+        ${this.renderWhy(event)}
+        <div class="er-source-line">${escapeHtml(event.source)} · ${escapeHtml(event.sourceType.replace(/_/g, ' '))}${event.isDemoSeed ? ' · demo seed' : ''}${sourceLink}</div>
+      </article>
+    `;
   }
 
-  private buildEventRow(
-    ev: Omit<RiskEvent, 'time'>,
-    animate: boolean
-  ): HTMLElement {
-    const row = document.createElement('div');
-
-    row.className =
-      'risk-feed-row' + (animate ? ' risk-feed-row-enter' : '');
-
-    const levelDot = document.createElement('span');
-    levelDot.className = 'risk-feed-dot';
-    levelDot.style.background = ev.categoryColor;
-
-    if (ev.level === 'critical') {
-      levelDot.classList.add('risk-feed-dot-pulse');
-    }
-
-    const time = document.createElement('span');
-    time.className = 'risk-feed-time';
-    time.textContent = nowHHMM();
-
-    const cat = document.createElement('span');
-    cat.className = 'risk-feed-cat';
-    cat.style.color = ev.categoryColor;
-    cat.textContent = `[${ev.category}]`;
-
-    const msg = document.createElement('span');
-    msg.className = 'risk-feed-msg';
-    msg.textContent = ev.message;
-
-    row.appendChild(levelDot);
-    row.appendChild(time);
-    row.appendChild(cat);
-    row.appendChild(msg);
-
-    return row;
+  private renderWhy(event: EnterpriseRiskEvent): string {
+    const rows: Array<[string, string[]]> = [
+      ['Trigger', event.explanation.triggerBasis],
+      ['Priority', event.explanation.priorityBasis],
+      ['Mapping', event.explanation.mappingBasis],
+      ['Data', event.explanation.dataQuality],
+    ];
+    return `
+      <details class="er-why">
+        <summary>Why this alert</summary>
+        ${rows.map(([label, items]) => `
+          <div class="er-why-row">
+            <strong>${escapeHtml(label)}</strong>
+            <ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          </div>
+        `).join('')}
+      </details>
+    `;
   }
 
-  private pushEvent(): void {
-    if (!this.feedEl) return;
-
-    const ev = EVENT_POOL[this.eventIndex % EVENT_POOL.length];
-
-    if (!ev) return;
-
-    this.eventIndex++;
-
-    const row = this.buildEventRow(ev, true);
-
-    this.feedEl.insertBefore(row, this.feedEl.firstChild);
-
-    // 最多保留8条
-    while (this.feedEl.children.length > 8) {
-      this.feedEl.removeChild(this.feedEl.lastChild!);
-    }
+  private renderAlert(alert: EnterpriseAlert): string {
+    const acknowledged = this.acknowledgedAlertIds.has(alert.id);
+    return `
+      <div class="er-alert er-card-priority-${priorityClass(alert.priority)}${acknowledged ? ' er-acknowledged' : ''}">
+        <div class="er-row-top">
+          <span class="er-priority ${priorityClass(alert.priority)}">${escapeHtml(alert.priority)}</span>
+          <button class="er-mini-action" type="button" data-er-alert-id="${escapeHtml(alert.id)}">${acknowledged ? 'Undo ack' : 'Acknowledge'}</button>
+        </div>
+        <strong>${escapeHtml(alert.title)}</strong>
+        <p>${escapeHtml(alert.message)}</p>
+        <div class="er-tags">${alert.departments.map(dep => `<span>${escapeHtml(dep)}</span>`).join('')}</div>
+      </div>
+    `;
   }
 
-  public destroy(): void {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-
-    if (this.eventTimer) {
-      clearInterval(this.eventTimer);
-      this.eventTimer = null;
-    }
-
-    super.destroy();
+  private renderTask(task: EnterpriseTask): string {
+    const status = this.getTaskStatus(task);
+    return `
+      <div class="er-task">
+        <button class="er-task-status er-task-status-btn" type="button" data-er-task-id="${escapeHtml(task.id)}">${escapeHtml(status.replace(/_/g, ' '))}</button>
+        <div>
+          <strong>${escapeHtml(task.title)}</strong>
+          <p>${escapeHtml(task.department)} · due ${escapeHtml(task.dueDate)}</p>
+        </div>
+        <span class="er-priority ${priorityClass(task.priority)}">${escapeHtml(task.priority)}</span>
+      </div>
+    `;
   }
 }

@@ -2548,6 +2548,17 @@ export class GlobeMap {
     this.enforceLayerLimit();
   }
 
+  public disableLayer(layer: keyof MapLayers): void {
+    if (layer === 'dayNight') return;
+    if (!this.layers[layer]) return;
+    (this.layers as any)[layer] = false;
+    const toggle = this.layerTogglesEl?.querySelector(`.layer-toggle[data-layer="${layer}"] input`) as HTMLInputElement | null;
+    if (toggle) toggle.checked = false;
+    this.flushLayerChannels(layer);
+    this.enforceLayerLimit();
+    this.onLayerChangeCb?.(layer, false, 'programmatic');
+  }
+
   private layerWarningShown = false;
   private lastActiveLayerCount = 0;
 

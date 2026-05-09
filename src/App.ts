@@ -723,6 +723,10 @@ export class App {
     if (!CYBER_LAYER_ENABLED) {
       mapLayers.cyberThreats = false;
     }
+    if (panelSettings['enterprise-risk']?.enabled !== false) {
+      mapLayers.tradeRoutes = false;
+      if (initialUrlState?.layers) initialUrlState.layers.tradeRoutes = false;
+    }
     // One-time migration: reduce default-enabled sources (full variant only)
     if (currentVariant === 'full') {
       const baseKey = 'worldmonitor-sources-reduction-v3';
