@@ -18,6 +18,7 @@ const FULL_PANELS: Record<string, PanelConfig> = {
   map: { name: 'Global Map', enabled: true, priority: 1 },
   'live-news': { name: 'Live News', enabled: true, priority: 1 },
   'enterprise-risk': { name: '企业风控免疫中枢', enabled: true, priority: 1 },
+  'enterprise-risk-events': { name: 'Event List', enabled: true, priority: 1 },
   'live-webcams': { name: 'Live Webcams', enabled: true, priority: 1 },
   'windy-webcams': { name: 'Windy Live Webcam', enabled: false, priority: 2 },
   insights: { name: 'AI Insights', enabled: true, priority: 1 },
@@ -1229,7 +1230,7 @@ export const PANEL_CATEGORY_MAP: Record<string, { labelKey: string; panelKeys: s
   // All variants — essential panels
   core: {
     labelKey: 'header.panelCatCore',
-    panelKeys: ['map', 'live-news', 'enterprise-risk', 'live-webcams', 'windy-webcams', 'insights', 'strategic-posture'],
+    panelKeys: ['map', 'live-news', 'enterprise-risk', 'enterprise-risk-events', 'live-webcams', 'windy-webcams', 'insights', 'strategic-posture'],
   },
 
   // Full (geopolitical) variant

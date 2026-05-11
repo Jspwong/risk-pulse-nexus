@@ -2202,9 +2202,9 @@
   padding: 12px;
   background: color-mix(in srgb, var(--surface) 40%, var(--bg));
   border-top: 1px solid var(--border);
-  flex: 1;
+  flex: 0 0 260px;
   min-height: 120px;
-  overflow-y: auto;
+  overflow: hidden;
   flex-shrink: 0;
   transition: all 0.2s ease;
   position: relative;

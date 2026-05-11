@@ -36,10 +36,10 @@ describe('enterprise risk demo contract', () => {
 
   it('uses demo-ready labels for the four visible risk tags', () => {
     const src = read('src/services/enterprise-risk.ts');
-    assert.match(src, /geopolitical:\s*'地缘政治风险'/);
-    assert.match(src, /regulatory:\s*'合规监管风险'/);
-    assert.match(src, /supply_chain:\s*'供应链风险'/);
-    assert.match(src, /financial_fx:\s*'汇率风险'/);
+    assert.match(src, /geopolitical:\s*'Geopolitical Risk'/);
+    assert.match(src, /regulatory:\s*'Regulatory Risk'/);
+    assert.match(src, /supply_chain:\s*'Supply Chain Risk'/);
+    assert.match(src, /financial_fx:\s*'FX Risk'/);
   });
 
   it('attaches a credible CBAM source with official fallback', () => {
@@ -52,16 +52,16 @@ describe('enterprise risk demo contract', () => {
 
   it('renders the selected card as a four-layer closed loop', () => {
     const src = read('src/components/EnterpriseRiskPanel.ts');
-    assert.match(src, /renderSelectedFlow/);
-    assert.match(src, /Selected Card Closed Loop/);
-    assert.match(src, /感知层/);
-    assert.match(src, /识别层/);
-    assert.match(src, /传导层/);
-    assert.match(src, /响应层/);
+    assert.match(src, /Perception Layer/);
+    assert.match(src, /Identification Layer/);
+    assert.match(src, /Transmission Layer/);
+    assert.match(src, /Response Layer/);
+    assert.match(src, /Qwen Identification Agent/);
+    assert.match(src, /Qwen Transmission Agent/);
     assert.match(src, /evidenceSources/);
     assert.match(src, /er-transmission-list/);
     assert.doesNotMatch(src, /renderLoopStep/);
-    assert.doesNotMatch(src, /Internal Mapping · Selected Trigger/);
+    assert.doesNotMatch(src, /Internal Mapping - Selected Trigger/);
   });
 
   it('provides a server-side Qwen entry point for identification and transmission agents', () => {
@@ -95,12 +95,120 @@ describe('enterprise risk demo contract', () => {
     assert.match(service, /applyEnterpriseRiskAgentResult/);
     assert.match(service, /identificationSource:\s*'qwen_agent'/);
     assert.match(service, /transmissionSource:\s*'qwen_agent'/);
-    assert.match(service, /规则层仅作为候选生成和失败兜底/);
+    assert.match(service, /rule layer is only candidate generation and failure fallback/);
     assert.match(loader, /fetchEnterpriseRiskAgentBatch/);
     assert.match(loader, /markEnterpriseRiskAgentRunning/);
     assert.match(loader, /markEnterpriseRiskAgentFallback/);
     assert.match(panel, /Qwen Identification Agent/);
     assert.match(panel, /Qwen Transmission Agent/);
     assert.match(client, /mode:\s*'batch_closed_loop'/);
+  });
+
+  it('uses seven-day upstream news windows for enterprise-risk live candidates', () => {
+    const clientRss = read('src/services/rss.ts');
+    const serverDigest = read('server/worldmonitor/news/v1/list-feed-digest.ts');
+    const clientFeeds = read('src/config/feeds.ts');
+    const serverFeeds = read('server/worldmonitor/news/v1/_feeds.ts');
+    const loader = read('src/app/data-loader.ts');
+
+    assert.match(clientRss, /const FEED_LOOKBACK_MS = 3 \* 24 \* 60 \* 60 \* 1000/);
+    assert.match(clientRss, /const MAX_ITEMS_PER_FEED = 15/);
+    assert.match(clientRss, /const MAX_ITEMS_PER_CATEGORY = 60/);
+    assert.match(clientRss, /feed:v3-3d/);
+
+    assert.match(serverDigest, /const ITEMS_PER_FEED = 15/);
+    assert.match(serverDigest, /const MAX_ITEMS_PER_CATEGORY = 60/);
+    assert.match(serverDigest, /const hours = Number\.isInteger\(raw\) && raw > 0 \? raw : 168/);
+    assert.match(serverDigest, /rss:feed:v5-3d/);
+    assert.match(serverDigest, /news:digest:v3-3d/);
+    assert.match(loader, /digest:last-good:v3-3d/);
+    assert.match(loader, /refreshEnterpriseRiskAssessment\(\{ runAgent: !this\.isBulkLoading \}\)/);
+
+    assert.doesNotMatch(clientFeeds, /when:[1-2]d|when:[8-9]d/);
+    assert.doesNotMatch(serverFeeds, /when:[1-2]d|when:[8-9]d/);
+  });
+
+  it('filters live cards for enterprise relevance and avoids weak map targets', () => {
+    const service = read('src/services/enterprise-risk.ts');
+    const loader = read('src/app/data-loader.ts');
+    const panel = read('src/components/EnterpriseRiskPanel.ts');
+
+    assert.match(service, /ENTERPRISE_RISK_REQUIRED_KEYWORDS/);
+    assert.match(service, /LOW_ENTERPRISE_SIGNAL_PATTERNS/);
+    assert.match(service, /denaturaliz/);
+    assert.match(service, /terrorist support/);
+    assert.match(service, /enterpriseSignalStrength/);
+    assert.match(service, /enterpriseSignalStrength\(text\) < 4/);
+    assert.match(service, /hasLowEnterpriseSignal\(text\) && enterpriseSignalStrength\(text\) < 6/);
+    assert.match(service, /score >= 86 && directShock && routeOrCompliance/);
+    assert.match(service, /Math\.min\(scenarioRelevant \? 84 : 62/);
+    assert.match(service, /const routeIds = transmission\.impactPath\.routeIds\.length\s+\? transmission\.impactPath\.routeIds\s+:\s+\(event\.impactPath\?\.routeIds \?\? \[\]\)/);
+
+    assert.match(loader, /ENTERPRISE_RISK_FAST_NEWS_CATEGORIES/);
+    assert.match(loader, /shouldUsePerFeedFallbackForCategory/);
+    assert.match(loader, /categories\.sort/);
+
+    const rendering = read('src/components/enterprise-risk-rendering.ts');
+    assert.match(panel, /hasReliableEnterpriseRiskMapTarget/);
+    assert.match(rendering, /source !== 'feed'/);
+    assert.match(rendering, /resolution !== 'feed_coordinate'/);
+  });
+
+  it('ranks live appendix cards by enterprise business impact with risk-axis coverage', () => {
+    const service = read('src/services/enterprise-risk.ts');
+    const compareBody = service.match(/function compareLiveEvents[\s\S]*?\n\}/)?.[0] ?? '';
+
+    assert.match(service, /businessImpactScore/);
+    assert.match(service, /businessScenarioFitScore/);
+    assert.match(service, /businessTransmissionScore/);
+    assert.match(service, /businessLineExposureScore/);
+    assert.match(service, /riskAxisImpactScore/);
+    assert.match(service, /sourceConfidenceScore/);
+    assert.match(service, /MIN_BUSINESS_TRANSMISSION_SCORE/);
+    assert.match(service, /GENERIC_LOW_TRANSMISSION_PATTERNS/);
+    assert.match(service, /PRODUCT_COMPONENT_KEYWORDS/);
+    assert.match(service, /HARD_COMPLIANCE_KEYWORDS/);
+    assert.match(service, /FX_TRANSMISSION_KEYWORDS/);
+    assert.match(service, /businessTransmissionScore\(text\) < MIN_BUSINESS_TRANSMISSION_SCORE/);
+    assert.match(service, /filter\(hasBusinessTransmission\)/);
+    assert.match(service, /selectLiveEvents/);
+    assert.match(service, /LIVE_RISK_AXIS_ORDER:\s*EnterpriseRiskTag\[\]\s*=\s*\['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'\]/);
+    assert.match(service, /businessImpactScore\(event\) >= MIN_AXIS_COVERAGE_SCORE/);
+    assert.match(service, /liveRiskAxisScore\(event, axis\) >= MIN_AXIS_COVERAGE_SCORE/);
+    assert.match(service, /const liveAppendix = selectLiveEvents\(liveCandidates, MAX_LIVE_APPENDIX\)/);
+    assert.match(service, /consumer rules\?/);
+    assert.match(service, /trump tariffs\?/);
+    assert.match(service, /oil price\\b\(\?!\.\*\\b\(freight\|shipping\|suez\|red sea\|malacca\|container\|export margin\|fuel surcharge\)\\b\)/);
+
+    assert.ok(compareBody, 'compareLiveEvents function is missing');
+    assert.doesNotMatch(compareBody, /occurredAt/);
+    assert.doesNotMatch(compareBody, /location/);
+  });
+
+  it('keeps Qwen batch enrichment alive across local refreshes', () => {
+    const loader = read('src/app/data-loader.ts');
+    const client = read('src/services/enterprise-risk-agent-client.ts');
+
+    assert.match(loader, /if \(!options\.runAgent \|\| assessment\.events\.length === 0\) return;\s+const runId = \+\+this\.enterpriseRiskAgentRunId/s);
+    assert.match(client, /const requestedEvents = assessment\.events\.slice\(0, 7\)/);
+    assert.match(client, /fetchEnterpriseRiskAgentSingle\(assessment, event\)/);
+    assert.doesNotMatch(client, /fetchEnterpriseRiskAgentSingle\(assessment, event, controller\.signal\)/);
+    assert.match(client, /batch coverage/);
+  });
+
+  it('feeds enterprise risk with Southeast Asia supply-chain coverage', () => {
+    const serverFeeds = read('server/worldmonitor/news/v1/_feeds.ts');
+    const loader = read('src/app/data-loader.ts');
+    const service = read('src/services/enterprise-risk.ts');
+
+    assert.match(serverFeeds, /'southeast-asia'/);
+    assert.match(serverFeeds, /SEA Export Supply Chain/);
+    assert.match(serverFeeds, /Vietnam Manufacturing/);
+    assert.match(serverFeeds, /Thailand Manufacturing/);
+    assert.match(serverFeeds, /Indonesia EV Materials/);
+    assert.match(serverFeeds, /Malacca Shipping/);
+    assert.match(loader, /'southeast-asia'/);
+    assert.match(service, /isSoutheastAsiaBusinessEvent/);
+    assert.match(service, /MIN_SEA_COVERAGE_SCORE/);
   });
 });

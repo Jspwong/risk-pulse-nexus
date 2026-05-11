@@ -14,6 +14,7 @@ import {
   loadChannelsFromStorage,
   CIIPanel,
   AviationCommandBar,
+  EnterpriseRiskEventListPanel,
 } from '@/components';
 import { debounce, saveToStorage, loadFromStorage } from '@/utils';
 import { escapeHtml } from '@/utils/sanitize';
@@ -49,7 +50,7 @@ import type { Panel } from '@/components/Panel';
 
 /**
  * Panels that require premium access on web. Auth-based gating applies to
- * these — `updatePanelGating()` calls `Panel.showGatedCta()` to render
+ * these 闂?`updatePanelGating()` calls `Panel.showGatedCta()` to render
  * "Sign In to Unlock" / "Upgrade to Pro" for non-premium users.
  *
  * INVARIANT: every panel listed in `apiKeyPanels` (src/config/panels.ts
@@ -59,10 +60,10 @@ import type { Panel } from '@/components/Panel';
  * instead of the lock CTA. The PRO badge in the title still renders, so
  * the symptom is "PRO badge + panel-internal loading or empty copy"
  * which looks broken (e.g. Regional Intelligence rendering its empty-state
- * "is being refreshed" message to anonymous users — see todo #257 item 8).
+ * "is being refreshed" message to anonymous users 闂?see todo #257 item 8).
  *
  * The static test in tests/panel-config-guardrails.test.mjs enforces
- * `apiKeyPanels ⊆ WEB_PREMIUM_PANELS` so this drift can't recur silently.
+ * `apiKeyPanels 闂?WEB_PREMIUM_PANELS` so this drift can't recur silently.
  */
 const WEB_PREMIUM_PANELS = new Set([
   'stock-analysis',
@@ -81,7 +82,7 @@ const WEB_PREMIUM_PANELS = new Set([
  * Panels that require a Clerk-authenticated PRO account specifically.
  * Desktop API key / browser tester keys do NOT satisfy the gate because
  * these panels are bound to a Clerk userId server-side (e.g. the Brief
- * is stored at brief:{clerkUserId}:{date} in Redis — no Clerk user, no
+ * is stored at brief:{clerkUserId}:{date} in Redis 闂?no Clerk user, no
  * brief to fetch).
  *
  * Without this extra gate, API-key + free-Clerk users would see the
@@ -116,6 +117,7 @@ export class PanelLayoutManager implements AppModule {
   private proBlockEntitlementUnsubscribe: (() => void) | null = null;
   private boundWidgetCreatorHandler: ((e: Event) => void) | null = null;
   private boundEnterpriseRiskFocusHandler: ((e: Event) => void) | null = null;
+  private boundEnterpriseRiskOpenEventsHandler: ((e: Event) => void) | null = null;
   private unsubscribeEntitlementChange: (() => void) | null = null;
   private unsubscribePaymentFailureBanner: (() => void) | null = null;
 
@@ -132,9 +134,9 @@ export class PanelLayoutManager implements AppModule {
     // see their premium access without a manual page reload).
     //
     // Two return paths need to seed the transition detector as post-checkout:
-    //   1. Full-page Dodo redirect — handleCheckoutReturn() reads
+    //   1. Full-page Dodo redirect 闂?handleCheckoutReturn() reads
     //      subscription_id/status URL params and cleans them.
-    //   2. Dodo overlay success — setTimeout(reload) with no URL params;
+    //   2. Dodo overlay success 闂?setTimeout(reload) with no URL params;
     //      we stash a session flag before the reload and consume it here.
     const returnResult = handleCheckoutReturn();
     const returnedFromOverlay = consumePostCheckoutFlag();
@@ -160,7 +162,7 @@ export class PanelLayoutManager implements AppModule {
       showCheckoutFailureBanner(returnResult.rawStatus);
     }
 
-    // Always register the payment-failure-banner listener — onSubscriptionChange
+    // Always register the payment-failure-banner listener 闂?onSubscriptionChange
     // is an in-memory listener registry, doesn't open any network connection,
     // and survives the destroy/reinit cycle on auth transitions (see
     // billing.ts:124-126). Registering once here means the banner reacts when
@@ -171,17 +173,17 @@ export class PanelLayoutManager implements AppModule {
     // Defer Convex subscriptions until a real Clerk identity exists.
     //
     // `getUserId()` (user-identity.ts) always returns truthy for browser
-    // users — it falls back to an auto-generated `wm-anon-id` UUID — so the
+    // users 闂?it falls back to an auto-generated `wm-anon-id` UUID 闂?so the
     // previous `if (userId)` gate never short-circuited. That meant every
     // anonymous visitor opened a Convex WebSocket via getConvexClient()
     // with `setAuth(getClerkToken)` returning null, which the Convex SDK
     // could not authenticate, producing a constant
-    //   `WebSocket connection to wss://…/api/1.34.0/sync failed`
+    //   `WebSocket connection to wss://闂?api/1.34.0/sync failed`
     // reconnect loop in DevTools (todo #257 item 4). The subscriptions
     // themselves never delivered useful state for anon users either:
     //   - getEntitlementsForUser returns FREE_TIER_DEFAULTS without auth
     //   - getSubscriptionForUser returns null without auth
-    // — so the loop was pure noise.
+    // 闂?so the loop was pure noise.
     //
     // For users who sign in mid-session, App.ts:1003-1006 destroys and
     // re-initializes both subscriptions against the real Clerk userId, so
@@ -210,9 +212,9 @@ export class PanelLayoutManager implements AppModule {
       email: getAuthState().user?.email ?? null,
     }));
 
-    // Reload only on a free→pro transition. Legacy-pro users whose first
+    // Reload only on a free闂佹剚鍋呮慨鐜秓 transition. Legacy-pro users whose first
     // snapshot is already pro (lastEntitled === null) must not trigger a
-    // reload loop, but a user who pays mid-session (false → true) must see
+    // reload loop, but a user who pays mid-session (false 闂?true) must see
     // their panels unlock without manual refresh.
     //
     // When we just returned from a Dodo full-page redirect checkout, seed
@@ -220,10 +222,10 @@ export class PanelLayoutManager implements AppModule {
     // landed by the time the user's browser comes back, so the first
     // entitlement snapshot can arrive as pro. Without this seed the
     // transition detector would swallow that snapshot as "legacy-pro" and
-    // the user would see locked panels until a manual refresh — exactly the
+    // the user would see locked panels until a manual refresh 闂?exactly the
     // symptom that caused the 2026-04-17/18 duplicate-subscription incident.
     //
-    // REQUIRES_SKIP_INITIAL_SNAPSHOT_BEHAVIOR — the watcher is the SOLE
+    // REQUIRES_SKIP_INITIAL_SNAPSHOT_BEHAVIOR 闂?the watcher is the SOLE
     // automatic reload source for post-checkout success (the overlay
     // handler in checkout.ts deliberately does NOT reload). If PR #3163's
     // fix to `skipInitialSnapshot` is ever reverted, this detector
@@ -237,13 +239,13 @@ export class PanelLayoutManager implements AppModule {
       const reload = shouldReloadOnEntitlementChange(lastEntitled, entitled);
       lastEntitled = entitled;
       if (reload) {
-        console.log('[entitlements] Subscription activated — reloading to unlock panels');
+        console.log('[entitlements] Subscription activated 闂?reloading to unlock panels');
         window.location.reload();
         return;
       }
       // Re-run panel gating on every entitlement snapshot. hasPremiumAccess()
       // now consults isEntitled(), so a legacy-pro user whose first snapshot
-      // is already pro (null→true — intentionally not reloaded to avoid a
+      // is already pro (null闂佹剚鍋呮慨鐬╱e 闂?intentionally not reloaded to avoid a
       // loop) still needs the paywall overlay lifted; likewise on WS reconnect
       // or entitlement revocation, the lock state must follow the current
       // snapshot synchronously rather than waiting for the next auth event.
@@ -260,7 +262,7 @@ export class PanelLayoutManager implements AppModule {
     });
     this.fetchGitHubStars();
 
-    // Handle analyst action chip "Create chart widget →" click
+    // Handle analyst action chip "Create chart widget 闂? click
     this.boundWidgetCreatorHandler = ((e: CustomEvent<{ initialMessage?: string }>) => {
       openWidgetChatModal({
         mode: 'create',
@@ -296,6 +298,12 @@ export class PanelLayoutManager implements AppModule {
       this.ctx.map?.flashLocation(location.lat, location.lon, 2600);
     }) as EventListener;
     this.ctx.container.addEventListener('wm:enterprise-risk-focus-location', this.boundEnterpriseRiskFocusHandler);
+
+    this.boundEnterpriseRiskOpenEventsHandler = (() => {
+      const eventList = this.ctx.panels['enterprise-risk-events']?.getElement();
+      eventList?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }) as EventListener;
+    this.ctx.container.addEventListener('wm:enterprise-risk-open-events', this.boundEnterpriseRiskOpenEventsHandler);
   }
 
   destroy(): void {
@@ -314,6 +322,10 @@ export class PanelLayoutManager implements AppModule {
     if (this.boundEnterpriseRiskFocusHandler) {
       this.ctx.container.removeEventListener('wm:enterprise-risk-focus-location', this.boundEnterpriseRiskFocusHandler);
       this.boundEnterpriseRiskFocusHandler = null;
+    }
+    if (this.boundEnterpriseRiskOpenEventsHandler) {
+      this.ctx.container.removeEventListener('wm:enterprise-risk-open-events', this.boundEnterpriseRiskOpenEventsHandler);
+      this.boundEnterpriseRiskOpenEventsHandler = null;
     }
     this.panelDragCleanupHandlers.forEach((cleanup) => cleanup());
     this.panelDragCleanupHandlers = [];
@@ -364,17 +376,17 @@ export class PanelLayoutManager implements AppModule {
       // Clerk-pro-only panels: even when hasPremiumAccess() returns
       // true via API/tester key, these panels need a Clerk userId
       // bound to a PRO entitlement. We DO NOT trust client-side
-      // entitlement state as an authoritative gate — the server-side
+      // entitlement state as an authoritative gate 闂?the server-side
       // /api/latest-brief check is authoritative. We only downgrade
       // the gate reason here as AFFIRMATIVE DENIAL: when we KNOW
       // (snapshot loaded AND tier < 1) the user is free. In every
-      // other case — snapshot not yet loaded, Convex subscription
-      // skipped, transient failure — we leave the panel unlocked
+      // other case 闂?snapshot not yet loaded, Convex subscription
+      // skipped, transient failure 闂?we leave the panel unlocked
       // and let the server 403 path drive the upgrade CTA inside
       // the panel's refresh() catch block.
       //
-      // Prior iterations of this code tried the opposite — gating
-      // positively on hasTier(1) — and locked legitimate Pro users
+      // Prior iterations of this code tried the opposite 闂?gating
+      // positively on hasTier(1) 闂?and locked legitimate Pro users
       // out whenever the Convex snapshot was late, skipped, or
       // failed. Affirmative-denial-only is the right shape: never
       // over-gate, accept the one-doomed-fetch-per-session cost
@@ -442,13 +454,9 @@ export class PanelLayoutManager implements AppModule {
           <span class="risksense-logo-text">RiskSense</span>
           <span class="risksense-logo-sub">Risk Immunity Center for Advanced Manufacturing</span>
           <span class="risksense-status-pill">
-            <span class="risksense-pulse"></span>实时监控
+            <span class="risksense-pulse"></span>Live
           </span>
         </div>
-        <div class="status-indicator">
-            <span class="status-dot"></span>
-            <span>${t('header.live')}</span>
-          </div>
           <div class="region-selector">
             <select id="regionSelect" class="region-select">
               <option value="global">${t('components.deckgl.views.global')}</option>
@@ -466,9 +474,9 @@ export class PanelLayoutManager implements AppModule {
           </button>
         </div>
         <div class="header-right">
-          <button class="search-btn" id="searchBtn"><kbd>⌘K</kbd> ${t('header.search')}</button>
+          <button class="search-btn" id="searchBtn"><kbd>Ctrl K</kbd> ${t('header.search')}</button>
           ${this.ctx.isDesktopApp ? '' : `<button class="copy-link-btn" id="copyLinkBtn">${t('header.copyLink')}</button>`}
-          ${this.ctx.isDesktopApp ? '' : `<button class="fullscreen-btn" id="fullscreenBtn" title="${t('header.fullscreen')}">⛶</button>`}
+          ${this.ctx.isDesktopApp ? '' : `<button class="fullscreen-btn" id="fullscreenBtn" title="${t('header.fullscreen')}">Fullscreen</button>`}
           ${SITE_VARIANT === 'happy' ? `<button class="tv-mode-btn" id="tvModeBtn" title="TV Mode (Shift+T)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></button>` : ''}
           <span id="unifiedSettingsMount"></span>
           <span id="authWidgetMount"></span>
@@ -477,27 +485,27 @@ export class PanelLayoutManager implements AppModule {
       <div class="mobile-menu-overlay" id="mobileMenuOverlay"></div>
       <nav class="mobile-menu" id="mobileMenu">
         <div class="mobile-menu-header">
-          <span class="mobile-menu-title">Risk Immunity Center · RiskSense</span>
+          <span class="mobile-menu-title">Risk Immunity Center - RiskSense</span>
           <button class="mobile-menu-close" id="mobileMenuClose" aria-label="Close menu">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
         <div class="mobile-menu-divider"></div>
         <button class="mobile-menu-item" id="mobileMenuRegion">
-          <span class="mobile-menu-item-icon">🌐</span>
+          <span class="mobile-menu-item-icon">World</span>
           <span class="mobile-menu-item-label">${t('components.deckgl.views.global')}</span>
-          <span class="mobile-menu-chevron">▸</span>
+          <span class="mobile-menu-chevron">More</span>
         </button>
         <div class="mobile-menu-divider"></div>
         <button class="mobile-menu-item" id="mobileMenuSettings">
-          <span class="mobile-menu-item-icon">⚙️</span>
+          <span class="mobile-menu-item-icon">Settings</span>
           <span class="mobile-menu-item-label">${t('header.settings')}</span>
         </button>
         <button class="mobile-menu-item" id="mobileMenuTheme">
-          <span class="mobile-menu-item-icon">${getCurrentTheme() === 'dark' ? '☀️' : '🌙'}</span>
+          <span class="mobile-menu-item-icon">${getCurrentTheme() === 'dark' ? 'Light' : 'Dark'}</span>
           <span class="mobile-menu-item-label">${getCurrentTheme() === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
-        <div class="mobile-menu-version">Risk Immunity Center · RiskSense</div>
+        <div class="mobile-menu-version">Risk Immunity Center - RiskSense</div>
       </nav>
       <div class="region-sheet-backdrop" id="regionSheetBackdrop"></div>
       <div class="region-bottom-sheet" id="regionBottomSheet">
@@ -515,7 +523,7 @@ export class PanelLayoutManager implements AppModule {
       ].map(r =>
         `<button class="region-sheet-option ${r.value === 'global' ? 'active' : ''}" data-region="${r.value}">
           <span>${r.label}</span>
-          <span class="region-sheet-check">${r.value === 'global' ? '✓' : ''}</span>
+          <span class="region-sheet-check">${r.value === 'global' ? 'selected' : ''}</span>
         </button>`
       ).join('')}
       </div>
@@ -550,15 +558,6 @@ export class PanelLayoutManager implements AppModule {
         <div class="panels-grid" id="panelsGrid"></div>
         <button class="search-mobile-fab" id="searchMobileFab" aria-label="Search">\u{1F50D}</button>
       </div>
-      <footer class="site-footer">
-        <div class="site-footer-brand">
-          <div class="site-footer-brand-text">
-            <span class="site-footer-name">Risk Immunity Center · RiskSense</span>
-            <span class="site-footer-sub">Real-time Risk Intelligence & Dynamic Compliance for Global Manufacturing · Deloitte 2026 Digital Elite Challenge</span>
-          </div>
-        </div>
-        <span class="site-footer-copy">Multi-Agent Driven · Real-time Risk Intelligence · Internal & External Risk Integration</span>
-      </footer>
     `;
 
     await this.createPanels();
@@ -578,7 +577,7 @@ export class PanelLayoutManager implements AppModule {
     if (collapsed) mapSection.classList.add('collapsed');
 
     const updateBtn = (btn: HTMLButtonElement, isCollapsed: boolean) => {
-      btn.textContent = isCollapsed ? `▶ ${t('components.map.showMap')}` : `▼ ${t('components.map.hideMap')}`;
+      btn.textContent = isCollapsed ? `Show ${t('components.map.showMap')}` : `Hide ${t('components.map.hideMap')}`;
     };
 
     const btn = document.createElement('button');
@@ -636,13 +635,13 @@ export class PanelLayoutManager implements AppModule {
     this.criticalBannerEl.className = `critical-posture-banner ${isCritical ? 'severity-critical' : 'severity-elevated'}`;
     this.criticalBannerEl.innerHTML = `
       <div class="banner-content">
-        <span class="banner-icon">${isCritical ? '🚨' : '⚠️'}</span>
+        <span class="banner-icon">${isCritical ? 'ALERT' : 'WARN'}</span>
         <span class="banner-headline">${escapeHtml(top.headline)}</span>
-        <span class="banner-stats">${top.totalAircraft} aircraft • ${escapeHtml(top.summary)}</span>
+        <span class="banner-stats">${top.totalAircraft} aircraft - ${escapeHtml(top.summary)}</span>
         ${top.strikeCapable ? '<span class="banner-strike">STRIKE CAPABLE</span>' : ''}
       </div>
       <button class="banner-view" data-lat="${top.centerLat}" data-lon="${top.centerLon}">View Region</button>
-      <button class="banner-dismiss">×</button>
+      <button class="banner-dismiss">Close</button>
     `;
 
     this.criticalBannerEl.querySelector('.banner-view')?.addEventListener('click', () => {
@@ -722,8 +721,8 @@ export class PanelLayoutManager implements AppModule {
     return panel;
   }
 
-  // 0-100 event risk score: 0.40×severity + 0.30×geoConvergence + 0.30×CII
-  // CII component omitted until lat/lon→country lookup is added; weights rebalanced to 0.57+0.43
+  // 0-100 event risk score: 0.40闁煎顢峞verity + 0.30闁煎鐗╡oConvergence + 0.30闁煎鐓癐I
+  // CII component omitted until lat/lon闂佹剚鍋呮俊绲ntry lookup is added; weights rebalanced to 0.57+0.43
   private static computeEventRisk(cluster: ClusteredEvent): number | null {
     if (!cluster.threat) return null;
     const levelScore: Record<string, number> = { critical: 95, high: 75, medium: 50, low: 25, info: 10 };
@@ -734,7 +733,7 @@ export class PanelLayoutManager implements AppModule {
       : null;
     const geoScore = geoAlert?.score ?? 0;
 
-    // Rebalanced (CII pending): 0.57×severity + 0.43×geoConvergence
+    // Rebalanced (CII pending): 0.57闁煎顢峞verity + 0.43闁煎鐗╡oConvergence
     return Math.round(0.57 * severity + 0.43 * geoScore);
   }
 
@@ -759,11 +758,11 @@ export class PanelLayoutManager implements AppModule {
     // Failure mode is covered by the chunk-reload guard at src/main.ts:690-758
     // (catches `Failed to fetch dynamically imported module` and reloads).
     // The slow-fetch mode (chunk fetches that succeed but are very slow) is
-    // worth watching in production canaries — if it shows up, restructure to
+    // worth watching in production canaries 闂?if it shows up, restructure to
     // kick off the import early and run non-map panel construction before the
     // await (the only direct ctx.map dereferences in this function are
     // initEscalationGetters / getTimeRange right after construction, plus
-    // onTimeRangeChanged later — every other ctx.map use is `?.`-guarded).
+    // onTimeRangeChanged later 闂?every other ctx.map use is `?.`-guarded).
     const { MapContainer } = await import('@/components/MapContainer');
     this.ctx.map = new MapContainer(mapContainer, {
       zoom: this.ctx.isMobile ? 2.5 : 1.4,
@@ -781,14 +780,19 @@ export class PanelLayoutManager implements AppModule {
     this.ctx.map.initEscalationGetters();
     this.ctx.currentTimeRange = this.ctx.map.getTimeRange();
 
-    // ── External Risk Signals: Real-time News (RSS, no API key needed) ──
+    // 闂佸啿鍘滈崑鎾绘煃閸忓浜?External Risk Signals: Real-time News (RSS, no API key needed) 闂佸啿鍘滈崑鎾绘煃閸忓浜?
     this.createNewsPanel('politics', 'panels.politics');
 
-    // ── Enterprise Internal Risk Mapping (Core Panel) ──
+    // 闂佸啿鍘滈崑鎾绘煃閸忓浜?Enterprise Internal Risk Mapping (Core Panel) 闂佸啿鍘滈崑鎾绘煃閸忓浜?
     this.createPanel('enterprise-risk', () => new EnterpriseRiskPanel());
+    const enterpriseRiskEvents = this.createPanel('enterprise-risk-events', () => new EnterpriseRiskEventListPanel());
+    enterpriseRiskEvents?.setEventSelectionHandler((eventId) => {
+      const panel = this.ctx.panels['enterprise-risk'] as EnterpriseRiskPanel | undefined;
+      panel?.selectEventById(eventId);
+    });
     this.createPanel('live-webcams', () => new LiveWebcamsPanel());
 
-    // ── National Instability Index ──
+    // 闂佸啿鍘滈崑鎾绘煃閸忓浜?National Instability Index 闂佸啿鍘滈崑鎾绘煃閸忓浜?
     if (this.shouldCreatePanel('cii')) {
       const ciiPanel = new CIIPanel();
       ciiPanel.setShareStoryHandler((code, name) => {
@@ -800,14 +804,14 @@ export class PanelLayoutManager implements AppModule {
       this.ctx.panels['cii'] = ciiPanel;
     }
 
-    // ── Infrastructure Cascade Risk ──
+    // 闂佸啿鍘滈崑鎾绘煃閸忓浜?Infrastructure Cascade Risk 闂佸啿鍘滈崑鎾绘煃閸忓浜?
     // Hidden for the enterprise-risk demo layout.
 
-    // ── Strategic Risk Overview ──
-    // ── US Regional Intelligence Feed ──
+    // 闂佸啿鍘滈崑鎾绘煃閸忓浜?Strategic Risk Overview 闂佸啿鍘滈崑鎾绘煃閸忓浜?
+    // 闂佸啿鍘滈崑鎾绘煃閸忓浜?US Regional Intelligence Feed 闂佸啿鍘滈崑鎾绘煃閸忓浜?
     this.createNewsPanel('us', 'panels.us');
 
-    // Happy variant panels (lazy-loaded — only relevant for happy variant)
+    // Happy variant panels (lazy-loaded 闂?only relevant for happy variant)
     if (SITE_VARIANT === 'happy') {
       this.lazyPanel('positive-feed', () =>
         import('@/components/PositiveNewsFeedPanel').then(m => {
@@ -883,7 +887,7 @@ export class PanelLayoutManager implements AppModule {
       );
     }
 
-    // Always load custom widgets — Pro gating is handled reactively by auth state.
+    // Always load custom widgets 闂?Pro gating is handled reactively by auth state.
     for (const spec of loadWidgets()) {
       const panel = new CustomWidgetPanel(spec);
       this.ctx.panels[spec.id] = panel;
@@ -907,11 +911,14 @@ export class PanelLayoutManager implements AppModule {
     const activePanelKeys = Object.keys(this.ctx.panelSettings).filter(k => k !== 'map');
     const bottomSet = this.getSavedBottomSet();
     const savedOrder = this.getSavedPanelOrder();
+    const hasSavedOrder = savedOrder.length > 0;
     this.bottomSetMemory = bottomSet;
+    if (SITE_VARIANT === 'full' && this.ctx.panelSettings['enterprise-risk-events']?.enabled !== false) {
+      this.bottomSetMemory.add('enterprise-risk-events');
+    }
     const effectiveUltraWide = this.getEffectiveUltraWide();
     this.wasUltraWide = effectiveUltraWide;
 
-    const hasSavedOrder = savedOrder.length > 0;
     let allOrder: string[];
 
     if (hasSavedOrder) {
@@ -938,17 +945,10 @@ export class PanelLayoutManager implements AppModule {
       allOrder = [...defaultOrder];
 
       if (SITE_VARIANT !== 'happy') {
-        const liveNewsIdx = allOrder.indexOf('live-news');
-        if (liveNewsIdx > 0) {
-          allOrder.splice(liveNewsIdx, 1);
-          allOrder.unshift('live-news');
-        }
-
         const enterpriseIdx = allOrder.indexOf('enterprise-risk');
-        if (enterpriseIdx !== -1 && enterpriseIdx !== allOrder.indexOf('live-news') + 1) {
+        if (enterpriseIdx > 0) {
           allOrder.splice(enterpriseIdx, 1);
-          const afterNews = allOrder.indexOf('live-news') + 1;
-          allOrder.splice(afterNews, 0, 'enterprise-risk');
+          allOrder.unshift('enterprise-risk');
         }
 
         const webcamsIdx = allOrder.indexOf('live-webcams');
@@ -972,8 +972,10 @@ export class PanelLayoutManager implements AppModule {
 
     this.resolvedPanelOrder = allOrder;
 
-    const sidebarOrder = effectiveUltraWide
-      ? allOrder.filter(k => !this.bottomSetMemory.has(k))
+    const sidebarOrder = effectiveUltraWide && SITE_VARIANT === 'full' && this.ctx.panelSettings['enterprise-risk']?.enabled !== false
+      ? allOrder.filter(k => k === 'enterprise-risk')
+      : effectiveUltraWide
+        ? allOrder.filter(k => !this.bottomSetMemory.has(k))
       : allOrder;
     const bottomOrder = effectiveUltraWide
       ? allOrder.filter(k => this.bottomSetMemory.has(k))
@@ -1005,7 +1007,7 @@ export class PanelLayoutManager implements AppModule {
     });
     panelsGrid.appendChild(addPanelBlock);
 
-    // Always create Pro and MCP add-panel blocks — show/hide reactively via auth state.
+    // Always create Pro and MCP add-panel blocks 闂?show/hide reactively via auth state.
     const proBlock = document.createElement('button');
     proBlock.className = 'add-panel-block ai-widget-block ai-widget-block-pro';
     proBlock.setAttribute('aria-label', t('widgets.createInteractive'));
@@ -1056,12 +1058,12 @@ export class PanelLayoutManager implements AppModule {
     // "Connect MCP" CTAs) based on premium access.
     //
     // hasPremiumAccess() folds in isEntitled() (Convex Dodo entitlement) per
-    // panel-gating.ts:11-27 — so a paying subscriber whose Clerk publicMetadata
+    // panel-gating.ts:11-27 闂?so a paying subscriber whose Clerk publicMetadata
     // is never written by the webhook still resolves to true once the Convex
     // snapshot lands. BUT: the snapshot lands AFTER auth state stabilises, and
     // Convex updates do NOT necessarily fire a fresh subscribeAuthState event.
     // Subscribing only to subscribeAuthState meant these CTAs stayed
-    // display:none for the whole page lifetime for paying users — exactly the
+    // display:none for the whole page lifetime for paying users 闂?exactly the
     // shape PR #3505 chased on the server side, repeated here on the client.
     //
     // Subscribe to BOTH auth state and entitlement changes; whichever fires
@@ -1379,7 +1381,7 @@ export class PanelLayoutManager implements AppModule {
       // `parentNode === grid` guard: querySelector returns nodes that match
       // ANY descendant, but a concurrent DOM mutation (browser extension,
       // overlapping resize event mid-iteration) can move/remove nextEl
-      // between this read and the insertBefore call below — at which point
+      // between this read and the insertBefore call below 闂?at which point
       // insertBefore throws `NotFoundError: The node before which the new
       // node is to be inserted is not a child of this node.`
       // (WORLDMONITOR-Q6). If the reference moved, fall through to the

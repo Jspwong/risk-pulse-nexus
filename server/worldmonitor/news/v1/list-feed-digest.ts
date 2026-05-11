@@ -31,8 +31,8 @@ const RSS_ACCEPT = 'application/rss+xml, application/xml, text/xml, */*';
 
 const VALID_VARIANTS = new Set(['full', 'tech', 'finance', 'happy', 'commodity']);
 const fallbackDigestCache = new Map<string, { data: ListFeedDigestResponse; ts: number }>();
-const ITEMS_PER_FEED = 5;
-const MAX_ITEMS_PER_CATEGORY = 20;
+const ITEMS_PER_FEED = 15;
+const MAX_ITEMS_PER_CATEGORY = 60;
 const FEED_TIMEOUT_MS = 8_000;
 const OVERALL_DEADLINE_MS = 25_000;
 const BATCH_CONCURRENCY = 20;
@@ -58,7 +58,7 @@ const BATCH_CONCURRENCY = 20;
 // See R3 in docs/plans/2026-04-26-001-fix-brief-static-page-contamination-plan.md.
 function resolveMaxAgeMs(): number {
   const raw = Number.parseInt(process.env.NEWS_MAX_AGE_HOURS ?? '', 10);
-  const hours = Number.isInteger(raw) && raw > 0 ? raw : 96;
+  const hours = Number.isInteger(raw) && raw > 0 ? raw : 168;
   return hours * 60 * 60 * 1000;
 }
 
@@ -292,7 +292,7 @@ async function fetchAndParseRss(
   // "old poisoned long-TTL entry" — and that runtime guard regressed
   // throttling because every parsedTotal=0 read fell through to a live
   // upstream fetch (PR #3556 review P1: short TTL never throttled).
-  const cacheKey = `rss:feed:v3:${variant}:${feed.url}`;
+  const cacheKey = `rss:feed:v5-3d:${variant}:${feed.url}`;
 
   try {
     // Read cache unconditionally — the v3 prefix guarantees pre-fix
@@ -814,7 +814,7 @@ export async function listFeedDigest(
   const variant = VALID_VARIANTS.has(req.variant) ? req.variant : 'full';
   const lang = req.lang || 'en';
 
-  const digestCacheKey = `news:digest:v1:${variant}:${lang}`;
+  const digestCacheKey = `news:digest:v3-3d:${variant}:${lang}`;
   const fallbackKey = `${variant}:${lang}`;
 
   const empty = (): ListFeedDigestResponse => ({ categories: {}, feedStatuses: {}, generatedAt: new Date().toISOString() });

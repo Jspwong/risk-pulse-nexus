@@ -1637,6 +1637,10 @@ body.panel-resize-active iframe {
   font-family: inherit;
 }
 
+.panels-grid > .add-panel-block:not(.ai-widget-block):not(.mcp-panel-block) {
+  display: none;
+}
+
 .add-panel-block:hover {
   border-color: var(--accent);
   color: var(--accent);
@@ -1888,6 +1892,7 @@ body.panel-resize-active iframe {
   flex: 1;
   overflow-y: auto;
   padding: 8px;
+  min-height: 0;
   min-width: 0;
   user-select: none;
 }
@@ -20224,7 +20229,7 @@ body.map-width-resizing {
   .main-content {
     display: grid;
     grid-template-columns: var(--map-col-width, 60%) 6px 1fr;
-    grid-template-rows: 1fr auto;
+    grid-template-rows: 1fr;
     gap: 4px 0;
     overflow: hidden;
   }
@@ -20276,6 +20281,12 @@ body.map-width-resizing {
     padding: 0;
   }
 
+  .map-bottom-grid {
+    grid-column: auto;
+    grid-row: auto;
+    min-height: 0;
+  }
+
   .map-resize-handle {
     position: relative;
     bottom: auto;
@@ -20303,10 +20314,15 @@ body.map-width-resizing {
     grid-column: 3;
     grid-row: 1;
     min-height: 0;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    grid-auto-rows: minmax(200px, 380px);
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: minmax(0, 1fr);
     align-content: start;
     overflow-y: auto;
+  }
+
+  .panels-grid > .enterprise-risk-panel-shell {
+    height: 100%;
+    min-height: 0 !important;
   }
 }
 
@@ -20314,7 +20330,7 @@ body.map-width-resizing {
 .main-content.desktop-grid {
   display: grid;
   grid-template-columns: var(--map-col-width, 60%) 6px 1fr;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: 1fr;
   gap: 4px 0;
   overflow: hidden;
 }
@@ -20353,10 +20369,15 @@ body.map-width-resizing {
   grid-column: 3;
   grid-row: 1;
   min-height: 0;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  grid-auto-rows: minmax(200px, 380px);
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
   align-content: start;
   overflow-y: auto;
+}
+
+.main-content.desktop-grid .panels-grid > .enterprise-risk-panel-shell {
+  height: 100%;
+  min-height: 0 !important;
 }
 
 .main-content.desktop-grid .map-resize-handle {
@@ -20378,6 +20399,12 @@ body.map-width-resizing {
 .main-content.desktop-grid .map-bottom-grid:empty {
   border-top: none;
   padding: 0;
+}
+
+.main-content.desktop-grid .map-bottom-grid {
+  grid-column: auto;
+  grid-row: auto;
+  min-height: 0;
 }
 
 /* ==========================================================================
@@ -23280,8 +23307,38 @@ body.map-width-resizing {
 }
 
 /* ===== Enterprise Risk Immunity Center ===== */
+.enterprise-risk-panel-shell {
+  contain: content;
+  height: 100%;
+  min-height: 0 !important;
+  overflow: hidden;
+  grid-column: 1 / -1 !important;
+  grid-row: 1 / -1 !important;
+}
+
 .enterprise-risk-panel-shell .panel-content {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+}
+
+.enterprise-risk-events-panel-shell .panel-content {
+  overflow-y: auto;
+}
+
+.map-bottom-grid .enterprise-risk-events-panel-shell {
+  grid-column: auto;
+  height: 100%;
+  min-height: 0 !important;
+}
+
+.map-bottom-grid .enterprise-risk-events-panel-shell > .panel-header {
+  display: none;
+}
+
+.map-bottom-grid .enterprise-risk-events-panel-shell .panel-content {
+  min-height: 0;
+  padding-top: 0;
 }
 
 .enterprise-risk-v2 {
@@ -23427,7 +23484,7 @@ button.er-metric:hover,
   background: rgba(0, 0, 0, 0.14);
 }
 
-.er-flow-card:nth-child(3) {
+.er-flow-card:nth-child(n + 3) {
   grid-column: 1 / -1;
 }
 
@@ -23580,7 +23637,7 @@ button.er-metric:hover,
 
 .er-event-list-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   align-items: stretch;
 }
@@ -23984,12 +24041,9 @@ button.er-metric:hover,
   .er-hero,
   .er-grid,
   .er-report-grid,
-  .er-flow-grid {
+  .er-flow-grid,
+  .er-event-list-grid {
     grid-template-columns: 1fr;
-  }
-
-  .er-flow-card:nth-child(3) {
-    grid-column: auto;
   }
 
   .er-transmission-list {

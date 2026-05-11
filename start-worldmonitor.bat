@@ -50,13 +50,11 @@ if not exist "node_modules\" (
 
 set "WM_URL=http://127.0.0.1:3000"
 echo [INFO] Starting WorldMonitor dev server...
-echo [INFO] Browser will open once when the server is ready: %WM_URL%
+echo [INFO] Open this URL in your browser: %WM_URL%
 echo [INFO] Keep this window open while using the app.
 echo.
 
-start "" /min powershell -NoProfile -ExecutionPolicy Bypass -Command "$url='%WM_URL%'; for ($i=0; $i -lt 60; $i++) { try { $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 1; if ($r.StatusCode -ge 200) { Start-Process $url; exit 0 } } catch { Start-Sleep -Milliseconds 500 } }"
-
-call npm.cmd run dev -- --host 127.0.0.1 --port 3000
+call npm.cmd run dev -- --host 127.0.0.1 --port 3000 --strictPort
 
 echo.
 echo [INFO] WorldMonitor dev server stopped.

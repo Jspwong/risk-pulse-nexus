@@ -172,6 +172,7 @@ import {
   MarketBreadthPanel,
 } from '@/components';
 import type { EnterpriseRiskPanel } from '@/components/EnterpriseRiskPanel';
+import type { EnterpriseRiskEventListPanel } from '@/components/EnterpriseRiskEventListPanel';
 import { SatelliteFiresPanel } from '@/components/SatelliteFiresPanel';
 import { classifyNewsItem } from '@/services/positive-classifier';
 import { fetchGivingSummary } from '@/services/giving';
@@ -223,6 +224,25 @@ const PROTO_TO_CLIENT_PHASE: Record<string, import('@/types').StoryPhase> = {
   STORY_PHASE_SUSTAINED:  'sustained',
   STORY_PHASE_FADING:     'fading',
 };
+
+const NEWS_DIGEST_LAST_GOOD_CACHE_KEY = 'digest:last-good:v3-3d';
+const ENTERPRISE_RISK_FAST_NEWS_CATEGORIES = new Set([
+  'geopolitical-risk',
+  'asia',
+  'southeast-asia',
+  'energy',
+  'finance',
+  'forex',
+  'centralbanks',
+  'economic',
+  'commodities',
+  'commodity-news',
+  'critical-minerals',
+  'supply-chain',
+  'commodity-regulation',
+  'markets',
+  'fin-regulation',
+]);
 
 function protoItemToNewsItem(p: ProtoNewsItem): NewsItem {
   const level = PROTO_TO_CLIENT_LEVEL[p.threat?.level ?? 'THREAT_LEVEL_UNSPECIFIED'];
@@ -311,6 +331,7 @@ export class DataLoaderManager implements AppModule {
   private readonly perFeedFallbackIntelFeedLimit = 6;
   private readonly perFeedFallbackBatchSize = 2;
   private lastGoodDigest: ListFeedDigestResponse | null = null;
+  private isBulkLoading = false;
 
   constructor(ctx: AppContext, callbacks: DataLoaderCallbacks) {
     this.ctx = ctx;
@@ -395,12 +416,12 @@ export class DataLoaderManager implements AppModule {
   }
 
   private persistDigest(data: ListFeedDigestResponse): void {
-    setPersistentCache('digest:last-good', data).catch(() => {});
+    setPersistentCache(NEWS_DIGEST_LAST_GOOD_CACHE_KEY, data).catch(() => {});
   }
 
   private async loadPersistedDigest(): Promise<ListFeedDigestResponse | null> {
     try {
-      const envelope = await getPersistentCache<ListFeedDigestResponse>('digest:last-good');
+      const envelope = await getPersistentCache<ListFeedDigestResponse>(NEWS_DIGEST_LAST_GOOD_CACHE_KEY);
       if (!envelope) return null;
       if (Date.now() - envelope.updatedAt > this.persistedDigestMaxAgeMs) return null;
       this.lastGoodDigest = envelope.data;
@@ -415,10 +436,32 @@ export class DataLoaderManager implements AppModule {
     return isFeatureEnabled('newsPerFeedFallback');
   }
 
+  private shouldUsePerFeedFallbackForCategory(category: string): boolean {
+    if (this.isPerFeedFallbackEnabled()) return true;
+    return !!this.ctx.panels['enterprise-risk'] && ENTERPRISE_RISK_FAST_NEWS_CATEGORIES.has(category);
+  }
+
   private getStaleNewsItems(category: string): NewsItem[] {
     const staleItems = this.ctx.newsByCategory[category];
     if (!Array.isArray(staleItems) || staleItems.length === 0) return [];
     return [...staleItems].sort((a, b) => b.pubDate.getTime() - a.pubDate.getTime());
+  }
+
+  private getEnterpriseRiskNewsInputs(): NewsItem[] {
+    if (this.ctx.allNews.length > 0) return this.ctx.allNews;
+
+    const seen = new Set<string>();
+    const items: NewsItem[] = [];
+    Object.values(this.ctx.newsByCategory).forEach((categoryItems) => {
+      categoryItems.forEach((item) => {
+        const key = `${item.source}|${item.link || item.title}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        items.push(item);
+      });
+    });
+
+    return items.sort((a, b) => b.pubDate.getTime() - a.pubDate.getTime());
   }
 
   private selectLimitedFeeds<T>(feeds: T[], maxFeeds: number): T[] {
@@ -440,6 +483,11 @@ export class DataLoaderManager implements AppModule {
   }
 
   async loadAllData(forceAll = false): Promise<void> {
+    const previousBulkLoading = this.isBulkLoading;
+    this.isBulkLoading = true;
+    let restoreBulkLoading = true;
+
+    try {
     const runGuarded = async (name: string, fn: () => Promise<void>): Promise<void> => {
       if (this.ctx.isDestroyed || this.ctx.inFlight.has(name)) return;
       this.ctx.inFlight.add(name);
@@ -629,9 +677,11 @@ export class DataLoaderManager implements AppModule {
         await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
       }
     }
+    this.isBulkLoading = previousBulkLoading;
+    restoreBulkLoading = false;
 
     this.updateSearchIndex();
-    this.refreshEnterpriseRiskAssessment();
+    this.refreshEnterpriseRiskAssessment({ runAgent: true });
 
     if (hasPremiumAccess()) {
       await Promise.allSettled([
@@ -647,6 +697,9 @@ export class DataLoaderManager implements AppModule {
       this.refreshCiiAndBrief();
     } else {
       this.refreshTemporalBaseline().catch(() => {});
+    }
+    } finally {
+      if (restoreBulkLoading) this.isBulkLoading = previousBulkLoading;
     }
   }
 
@@ -917,36 +970,42 @@ export class DataLoaderManager implements AppModule {
       const enabledNames = new Set(enabledFeeds.map(f => f.name));
 
       // Digest branch: server already aggregated feeds — map proto items to client types
-      if (digest?.categories && category in digest.categories) {
+      const digestBucket = digest?.categories?.[category];
+      if (digestBucket) {
         const items = (digest.categories[category]?.items ?? [])
           .map(protoItemToNewsItem)
           .filter(i => enabledNames.has(i.source));
 
-        ingestHeadlines(items.map(i => ({ title: i.title, pubDate: i.pubDate, source: i.source, link: i.link })));
+        if (items.length === 0) {
+          console.warn(`[News] Digest category "${category}" empty after source filtering; falling back to per-feed RSS`);
+        } else {
 
-        // Skip client-side AI reclassification for digest items.
-        // The server already ran enrichWithAiCache() which checks the same Redis keys
-        // that classifyEvent writes to. Re-firing classifyEvent from every client wastes
-        // edge requests even when they're Redis cache hits.
+          ingestHeadlines(items.map(i => ({ title: i.title, pubDate: i.pubDate, source: i.source, link: i.link })));
 
-        checkBatchForBreakingAlerts(items);
-        this.flashMapForNews(items);
-        this.renderNewsForCategory(category, items);
+          // Skip client-side AI reclassification for digest items.
+          // The server already ran enrichWithAiCache() which checks the same Redis keys
+          // that classifyEvent writes to. Re-firing classifyEvent from every client wastes
+          // edge requests even when they're Redis cache hits.
 
-        this.ctx.statusPanel?.updateFeed(category.charAt(0).toUpperCase() + category.slice(1), {
-          status: 'ok',
-          itemCount: items.length,
-        });
+          checkBatchForBreakingAlerts(items);
+          this.flashMapForNews(items);
+          this.renderNewsForCategory(category, items);
 
-        if (panel) {
-          try {
-            const baseline = await updateBaseline(`news:${category}`, items.length);
-            const deviation = calculateDeviation(items.length, baseline);
-            panel.setDeviation(deviation.zScore, deviation.percentChange, deviation.level);
-          } catch (e) { console.warn(`[Baseline] news:${category} write failed:`, e); }
+          this.ctx.statusPanel?.updateFeed(category.charAt(0).toUpperCase() + category.slice(1), {
+            status: 'ok',
+            itemCount: items.length,
+          });
+
+          if (panel) {
+            try {
+              const baseline = await updateBaseline(`news:${category}`, items.length);
+              const deviation = calculateDeviation(items.length, baseline);
+              panel.setDeviation(deviation.zScore, deviation.percentChange, deviation.level);
+            } catch (e) { console.warn(`[Baseline] news:${category} write failed:`, e); }
+          }
+
+          return items;
         }
-
-        return items;
       }
 
       // Per-feed fallback: fetch each feed individually (first load or digest unavailable)
@@ -994,7 +1053,7 @@ export class DataLoaderManager implements AppModule {
         return staleItems;
       }
 
-      if (!this.isPerFeedFallbackEnabled()) {
+      if (!this.shouldUsePerFeedFallbackForCategory(category)) {
         console.warn(`[News] Digest missing for "${category}", limited per-feed fallback disabled`);
         this.renderNewsForCategory(category, []);
         this.ctx.statusPanel?.updateFeed(category.charAt(0).toUpperCase() + category.slice(1), {
@@ -1074,6 +1133,7 @@ export class DataLoaderManager implements AppModule {
     const categories = Object.entries(FEEDS)
       .filter((entry): entry is [string, typeof FEEDS[keyof typeof FEEDS]] => Array.isArray(entry[1]) && entry[1].length > 0)
       .map(([key, feeds]) => ({ key, feeds }));
+    categories.sort((a, b) => Number(ENTERPRISE_RISK_FAST_NEWS_CATEGORIES.has(b.key)) - Number(ENTERPRISE_RISK_FAST_NEWS_CATEGORIES.has(a.key)));
 
     const digest = await digestPromise;
 
@@ -1228,7 +1288,7 @@ export class DataLoaderManager implements AppModule {
       ]);
     }
 
-    this.refreshEnterpriseRiskAssessment();
+    this.refreshEnterpriseRiskAssessment({ runAgent: !this.isBulkLoading });
   }
 
   async loadStockAnalysis(): Promise<void> {
@@ -3396,12 +3456,13 @@ export class DataLoaderManager implements AppModule {
 
   private enterpriseRiskAgentRunId = 0;
 
-  private refreshEnterpriseRiskAssessment(): void {
+  private refreshEnterpriseRiskAssessment(options: { runAgent?: boolean } = {}): void {
     const panel = this.ctx.panels['enterprise-risk'] as EnterpriseRiskPanel | undefined;
-    if (!panel) return;
+    const eventListPanel = this.ctx.panels['enterprise-risk-events'] as EnterpriseRiskEventListPanel | undefined;
+    if (!panel && !eventListPanel) return;
 
     const assessment = buildEnterpriseRiskAssessment({
-      news: this.ctx.allNews,
+      news: this.getEnterpriseRiskNewsInputs(),
       clusters: this.ctx.latestClusters,
       crossSourceSignals: this.latestCrossSourceSignals,
       supplyChain: {
@@ -3412,23 +3473,33 @@ export class DataLoaderManager implements AppModule {
       },
       markets: this.ctx.latestMarkets,
     });
-    panel.setAssessment(assessment);
+    panel?.setAssessment(assessment);
+    eventListPanel?.setAssessment(assessment);
+
+    if (!options.runAgent || assessment.events.length === 0) return;
 
     const runId = ++this.enterpriseRiskAgentRunId;
     const runningAssessment = markEnterpriseRiskAgentRunning(assessment);
-    panel.setAssessment(runningAssessment);
+    panel?.setAssessment(runningAssessment);
+    eventListPanel?.setAssessment(runningAssessment);
     void fetchEnterpriseRiskAgentBatch(runningAssessment)
       .then((agentResult) => {
         if (runId !== this.enterpriseRiskAgentRunId) return;
         if (!agentResult || agentResult.events.length === 0) {
-          panel.setAssessment(markEnterpriseRiskAgentFallback(runningAssessment));
+          const fallbackAssessment = markEnterpriseRiskAgentFallback(runningAssessment);
+          panel?.setAssessment(fallbackAssessment);
+          eventListPanel?.setAssessment(fallbackAssessment);
           return;
         }
-        panel.setAssessment(applyEnterpriseRiskAgentResult(runningAssessment, agentResult));
+        const agentAssessment = applyEnterpriseRiskAgentResult(runningAssessment, agentResult);
+        panel?.setAssessment(agentAssessment);
+        eventListPanel?.setAssessment(agentAssessment);
       })
       .catch(() => {
         if (runId !== this.enterpriseRiskAgentRunId) return;
-        panel.setAssessment(markEnterpriseRiskAgentFallback(runningAssessment));
+        const fallbackAssessment = markEnterpriseRiskAgentFallback(runningAssessment);
+        panel?.setAssessment(fallbackAssessment);
+        eventListPanel?.setAssessment(fallbackAssessment);
       });
   }
 }

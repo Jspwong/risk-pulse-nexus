@@ -16,6 +16,9 @@ const FEED_COOLDOWN_MS = 5 * 60 * 1000;
 const MAX_FAILURES = 2;
 const MAX_CACHE_ENTRIES = 100;
 const FEED_SCOPE_SEPARATOR = '::';
+const FEED_LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
+const MAX_ITEMS_PER_FEED = 15;
+const MAX_ITEMS_PER_CATEGORY = 60;
 const feedFailures = new Map<string, { count: number; cooldownUntil: number }>();
 const feedCache = new Map<string, { items: NewsItem[]; timestamp: number }>();
 const CACHE_TTL = 30 * 60 * 1000;
@@ -42,7 +45,7 @@ function parseFeedScope(feedScope: string): { feedName: string; lang: string } {
 }
 
 function getPersistentFeedKey(feedScope: string): string {
-  return `feed:${feedScope}`;
+  return `feed:v3-3d:${feedScope}`;
 }
 
 async function readPersistentFeed(key: string): Promise<NewsItem[] | null> {
@@ -124,6 +127,12 @@ export function getFeedFailures(): Map<string, { count: number; cooldownUntil: n
   }
 
   return currentLangFailures;
+}
+
+function isWithinFeedLookback(pubDate: Date): boolean {
+  const ts = pubDate.getTime();
+  if (!Number.isFinite(ts)) return true;
+  return ts >= Date.now() - FEED_LOOKBACK_MS && ts <= Date.now() + 5 * 60 * 1000;
 }
 
 
@@ -240,7 +249,7 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
     if (isAtom) items = doc.querySelectorAll('entry');
 
     const parsed = Array.from(items)
-      .slice(0, 5)
+      .slice(0, MAX_ITEMS_PER_FEED)
       .map((item) => {
         const title = item.querySelector('title')?.textContent || '';
         let link = '';
@@ -271,7 +280,8 @@ export async function fetchFeed(feed: Feed): Promise<NewsItem[]> {
           lang: feed.lang,
           ...(SITE_VARIANT === 'happy' && { imageUrl: extractImageUrl(item) }),
         };
-      });
+      })
+      .filter(item => isWithinFeedLookback(item.pubDate));
 
     feedCache.set(feedScope, { items: parsed, timestamp: Date.now() });
     void setPersistentCache(getPersistentFeedKey(feedScope), toSerializable(parsed));
@@ -324,7 +334,7 @@ export async function fetchCategoryFeeds(
     onBatch?: (items: NewsItem[]) => void;
   } = {}
 ): Promise<NewsItem[]> {
-  const topLimit = 20;
+  const topLimit = MAX_ITEMS_PER_CATEGORY;
   const batchSize = options.batchSize ?? 5;
   const currentLang = getCurrentLanguage();
 

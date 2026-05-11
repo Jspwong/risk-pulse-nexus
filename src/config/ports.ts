@@ -23,6 +23,8 @@ export const PORTS: Port[] = [
   { id: 'tanjung_pelepas', name: 'Tanjung Pelepas', lat: 1.37, lon: 103.55, country: 'Malaysia', type: 'container', rank: 18, note: 'Maersk hub. Singapore competitor. 11M+ TEU.' },
   { id: 'hamburg', name: 'Port of Hamburg', lat: 53.54, lon: 9.99, country: 'Germany', type: 'container', rank: 19, note: "Germany's largest. North Sea-Baltic connector. 8M+ TEU." },
   { id: 'laem_chabang', name: 'Laem Chabang', lat: 13.08, lon: 100.88, country: 'Thailand', type: 'container', rank: 20, note: "Thailand's main port. EEC hub. 8M+ TEU." },
+  { id: 'cat_lai', name: 'Cat Lai / Ho Chi Minh City', lat: 10.76, lon: 106.79, country: 'Vietnam', type: 'container', note: 'Southern Vietnam manufacturing and container gateway serving Ho Chi Minh City supplier corridors.' },
+  { id: 'hai_phong', name: 'Port of Hai Phong', lat: 20.86, lon: 106.68, country: 'Vietnam', type: 'container', note: 'Northern Vietnam container gateway serving electronics and industrial supplier networks.' },
   { id: 'new_york_nj', name: 'Port of NY/NJ', lat: 40.67, lon: -74.04, country: 'USA', type: 'container', rank: 21, note: 'US East Coast largest. Newark/Elizabeth terminals. 9M+ TEU.' },
   { id: 'piraeus', name: 'Port of Piraeus', lat: 37.94, lon: 23.65, country: 'Greece', type: 'container', rank: 25, note: "COSCO-operated. China's Mediterranean gateway. 5M+ TEU." },
 

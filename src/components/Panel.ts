@@ -64,6 +64,9 @@ function savePanelColSpan(panelId: string, span: number): void {
 }
 
 const PANEL_COLLAPSED_KEY = 'worldmonitor-panel-collapsed';
+const BOTTOM_PANEL_HEIGHTS_KEY = 'worldmonitor-bottom-panel-heights';
+const BOTTOM_PANEL_MIN_HEIGHT = 180;
+const BOTTOM_PANEL_MAX_HEIGHT = 520;
 
 function loadPanelCollapsed(): Record<string, boolean> {
   try {
@@ -86,6 +89,21 @@ function savePanelCollapsed(panelId: string, collapsed: boolean): void {
   } else {
     localStorage.setItem(PANEL_COLLAPSED_KEY, JSON.stringify(map));
   }
+}
+
+function loadBottomPanelHeights(): Record<string, number> {
+  try {
+    const stored = localStorage.getItem(BOTTOM_PANEL_HEIGHTS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveBottomPanelHeight(panelId: string, height: number): void {
+  const heights = loadBottomPanelHeights();
+  heights[panelId] = height;
+  localStorage.setItem(BOTTOM_PANEL_HEIGHTS_KEY, JSON.stringify(heights));
 }
 
 function clearPanelColSpan(panelId: string): void {
@@ -196,6 +214,23 @@ function setSpanClass(element: HTMLElement, span: number): void {
   element.classList.add('resized');
 }
 
+function isInBottomGrid(element: HTMLElement): boolean {
+  return !!element.closest('.map-bottom-grid');
+}
+
+function clampBottomPanelHeight(height: number): number {
+  return Math.max(BOTTOM_PANEL_MIN_HEIGHT, Math.min(BOTTOM_PANEL_MAX_HEIGHT, Math.round(height)));
+}
+
+function applyBottomPanelHeight(element: HTMLElement, height: number): void {
+  const grid = element.closest('.map-bottom-grid') as HTMLElement | null;
+  if (!grid) return;
+  const clamped = clampBottomPanelHeight(height);
+  grid.style.flexBasis = `${clamped}px`;
+  grid.style.height = `${clamped}px`;
+  element.style.minHeight = `${clamped}px`;
+}
+
 export class Panel {
   protected element: HTMLElement;
   protected content: HTMLElement;
@@ -212,6 +247,7 @@ export class Panel {
   private isResizing = false;
   private startY = 0;
   private startRowSpan = 1;
+  private startBottomHeight = 0;
   private onTouchMove: ((e: TouchEvent) => void) | null = null;
   private onTouchEnd: (() => void) | null = null;
   private onTouchCancel: (() => void) | null = null;
@@ -365,6 +401,7 @@ export class Panel {
     // Restore saved col-span
     this.restoreSavedColSpan();
     this.reconcileColSpanAfterAttach();
+    this.restoreSavedBottomHeightAfterAttach();
 
     this.showLoading();
   }
@@ -407,6 +444,22 @@ export class Panel {
     tryReconcile(attempts);
   }
 
+  private restoreSavedBottomHeightAfterAttach(attempts = 3): void {
+    const saved = loadBottomPanelHeights()[this.panelId];
+    if (typeof saved !== 'number' || !Number.isFinite(saved)) return;
+
+    const tryRestore = (remaining: number) => {
+      if (!this.element.isConnected || !isInBottomGrid(this.element)) {
+        if (remaining <= 0) return;
+        requestAnimationFrame(() => tryRestore(remaining - 1));
+        return;
+      }
+      applyBottomPanelHeight(this.element, saved);
+    };
+
+    tryRestore(attempts);
+  }
+
   private addRowTouchDocumentListeners(): void {
     if (this.onTouchMove) {
       document.addEventListener('touchmove', this.onTouchMove, { passive: false });
@@ -437,6 +490,10 @@ export class Panel {
     this.onRowMouseMove = (e: MouseEvent) => {
       if (!this.isResizing) return;
       const deltaY = e.clientY - this.startY;
+      if (isInBottomGrid(this.element)) {
+        applyBottomPanelHeight(this.element, this.startBottomHeight + deltaY);
+        return;
+      }
       setSpanClass(this.element, deltaToRowSpan(this.startRowSpan, deltaY));
     };
 
@@ -457,9 +514,16 @@ export class Panel {
         window.removeEventListener('blur', this.onRowWindowBlur);
       }
 
-      const currentSpan = getRowSpan(this.element);
-      savePanelSpan(this.panelId, currentSpan);
-      trackPanelResized(this.panelId, currentSpan);
+      if (isInBottomGrid(this.element)) {
+        const height = clampBottomPanelHeight(this.element.getBoundingClientRect().height);
+        applyBottomPanelHeight(this.element, height);
+        saveBottomPanelHeight(this.panelId, height);
+        trackPanelResized(this.panelId, height);
+      } else {
+        const currentSpan = getRowSpan(this.element);
+        savePanelSpan(this.panelId, currentSpan);
+        trackPanelResized(this.panelId, currentSpan);
+      }
     };
 
     this.onRowWindowBlur = () => this.onRowMouseUp?.();
@@ -470,6 +534,7 @@ export class Panel {
       this.isResizing = true;
       this.startY = e.clientY;
       this.startRowSpan = getRowSpan(this.element);
+      this.startBottomHeight = this.element.getBoundingClientRect().height;
       this.element.dataset.resizing = 'true';
       this.element.classList.add('resizing');
       document.body.classList.add('panel-resize-active');
@@ -501,6 +566,7 @@ export class Panel {
       this.isResizing = true;
       this.startY = touch.clientY;
       this.startRowSpan = getRowSpan(this.element);
+      this.startBottomHeight = this.element.getBoundingClientRect().height;
       this.element.classList.add('resizing');
       this.element.dataset.resizing = 'true';
       document.body.classList.add('panel-resize-active');
@@ -515,6 +581,10 @@ export class Panel {
       const touch = e.touches[0];
       if (!touch) return;
       const deltaY = touch.clientY - this.startY;
+      if (isInBottomGrid(this.element)) {
+        applyBottomPanelHeight(this.element, this.startBottomHeight + deltaY);
+        return;
+      }
       setSpanClass(this.element, deltaToRowSpan(this.startRowSpan, deltaY));
     };
 
@@ -529,9 +599,16 @@ export class Panel {
       document.body.classList.remove('panel-resize-active');
       this.resizeHandle?.classList.remove('active');
       this.removeRowTouchDocumentListeners();
-      const currentSpan = getRowSpan(this.element);
-      savePanelSpan(this.panelId, currentSpan);
-      trackPanelResized(this.panelId, currentSpan);
+      if (isInBottomGrid(this.element)) {
+        const height = clampBottomPanelHeight(this.element.getBoundingClientRect().height);
+        applyBottomPanelHeight(this.element, height);
+        saveBottomPanelHeight(this.panelId, height);
+        trackPanelResized(this.panelId, height);
+      } else {
+        const currentSpan = getRowSpan(this.element);
+        savePanelSpan(this.panelId, currentSpan);
+        trackPanelResized(this.panelId, currentSpan);
+      }
     };
     this.onTouchCancel = this.onTouchEnd;
 
@@ -1116,6 +1193,17 @@ export class Panel {
     const spans = loadPanelSpans();
     delete spans[this.panelId];
     localStorage.setItem(PANEL_SPANS_KEY, JSON.stringify(spans));
+    const bottomHeights = loadBottomPanelHeights();
+    delete bottomHeights[this.panelId];
+    localStorage.setItem(BOTTOM_PANEL_HEIGHTS_KEY, JSON.stringify(bottomHeights));
+    if (isInBottomGrid(this.element)) {
+      this.element.style.minHeight = '';
+      const grid = this.element.closest('.map-bottom-grid') as HTMLElement | null;
+      if (grid) {
+        grid.style.flexBasis = '';
+        grid.style.height = '';
+      }
+    }
   }
 
   public resetWidth(): void {

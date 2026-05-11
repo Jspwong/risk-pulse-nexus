@@ -139,6 +139,16 @@ export const TRADE_ROUTES: TradeRoute[] = [
     waypoints: ['taiwan_strait'],
   },
   {
+    id: 'vietnam-supplier-corridor',
+    name: 'Vietnam Supplier Corridor',
+    from: 'cat_lai',
+    to: 'hai_phong',
+    category: 'container',
+    status: 'active',
+    volumeDesc: 'Vietnam manufacturing supplier lane',
+    waypoints: [],
+  },
+  {
     id: 'singapore-med',
     name: 'Singapore → Mediterranean',
     from: 'singapore',

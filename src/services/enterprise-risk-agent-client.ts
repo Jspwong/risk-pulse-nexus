@@ -152,34 +152,41 @@ function normalizeClosedLoopPayload(payload: any): EnterpriseRiskClosedLoopResul
 async function fetchEnterpriseRiskAgentSingle(
   assessment: EnterpriseRiskAssessment,
   event: EnterpriseRiskEvent,
-  signal: AbortSignal,
+  options: { timeoutMs?: number } = {},
 ): Promise<EnterpriseRiskAgentEventResult | null> {
-  const payload = await postEnterpriseRiskAgent({
-    mode: 'closed_loop',
-    event: compactEvent(event),
-    profile: compactProfile(assessment.profile),
-    constraints: {
-      allowedRiskTags: ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'],
-      allowedPriorities: ['P1', 'P2', 'P3'],
-      maxBusinessMappingsPerEvent: 6,
-      maxResponseTasksPerEvent: 4,
-      maxBasisItems: 3,
-      preserveEventIds: true,
-      analyzeIndependently: true,
-      doNotCopyRuleCandidate: true,
-    },
-  }, signal);
-  const result = normalizeClosedLoopPayload(payload);
-  if (!result) {
-    console.warn('[EnterpriseRiskAgent] single response invalid', { eventId: event.id, payload });
-    return null;
+  const timeoutMs = options.timeoutMs ?? 14_000;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const payload = await postEnterpriseRiskAgent({
+      mode: 'closed_loop',
+      event: compactEvent(event),
+      profile: compactProfile(assessment.profile),
+      constraints: {
+        allowedRiskTags: ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'],
+        allowedPriorities: ['P1', 'P2', 'P3'],
+        maxBusinessMappingsPerEvent: 6,
+        maxResponseTasksPerEvent: 4,
+        maxBasisItems: 3,
+        preserveEventIds: true,
+        analyzeIndependently: true,
+        doNotCopyRuleCandidate: true,
+      },
+    }, controller.signal);
+    const result = normalizeClosedLoopPayload(payload);
+    if (!result) {
+      console.warn('[EnterpriseRiskAgent] single response invalid', { eventId: event.id, payload });
+      return null;
+    }
+    return {
+      eventId: event.id,
+      identification: result.identification,
+      transmission: result.transmission,
+      model: result.model,
+    };
+  } finally {
+    window.clearTimeout(timeout);
   }
-  return {
-    eventId: event.id,
-    identification: result.identification,
-    transmission: result.transmission,
-    model: result.model,
-  };
 }
 
 export async function fetchEnterpriseRiskAgentBatch(
@@ -187,6 +194,7 @@ export async function fetchEnterpriseRiskAgentBatch(
   options: { timeoutMs?: number } = {},
 ): Promise<EnterpriseRiskAgentBatchResult | null> {
   const timeoutMs = options.timeoutMs ?? 30_000;
+  const requestedEvents = assessment.events.slice(0, 7);
   const cacheKey = requestCacheKey(assessment);
   const cached = agentResultCache.get(cacheKey);
   if (cached) return cached;
@@ -196,7 +204,7 @@ export async function fetchEnterpriseRiskAgentBatch(
   try {
     const batchPayload = await postEnterpriseRiskAgent({
       mode: 'batch_closed_loop',
-      events: assessment.events.slice(0, 7).map(compactEvent),
+      events: requestedEvents.map(compactEvent),
       profile: compactProfile(assessment.profile),
       constraints: {
         allowedRiskTags: ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'],
@@ -212,12 +220,17 @@ export async function fetchEnterpriseRiskAgentBatch(
 
     if (Array.isArray(batchPayload?.result?.events) && batchPayload.result.events.length) {
       const returnedIds = new Set(batchPayload.result.events.map((event: EnterpriseRiskAgentEventResult) => event.eventId));
-      const missingEvents = assessment.events.slice(0, 7).filter(event => !returnedIds.has(event.id));
+      const missingEvents = requestedEvents.filter(event => !returnedIds.has(event.id));
       const recovered = missingEvents.length
-        ? (await Promise.allSettled(missingEvents.map(event => fetchEnterpriseRiskAgentSingle(assessment, event, controller.signal))))
+        ? (await Promise.allSettled(missingEvents.map(event => fetchEnterpriseRiskAgentSingle(assessment, event))))
           .map(result => result.status === 'fulfilled' ? result.value : null)
           .filter((result): result is EnterpriseRiskAgentEventResult => Boolean(result))
         : [];
+      console.info('[EnterpriseRiskAgent] batch coverage', {
+        requested: requestedEvents.length,
+        returned: batchPayload.result.events.length,
+        recovered: recovered.length,
+      });
       const result: EnterpriseRiskAgentBatchResult = {
         provider: 'qwen',
         model: typeof batchPayload.model === 'string' ? batchPayload.model : undefined,
@@ -229,7 +242,7 @@ export async function fetchEnterpriseRiskAgentBatch(
 
     console.warn('[EnterpriseRiskAgent] batch response invalid; trying per-card recovery', batchPayload);
     const recovered = (await Promise.allSettled(
-      assessment.events.slice(0, 7).map(event => fetchEnterpriseRiskAgentSingle(assessment, event, controller.signal)),
+      requestedEvents.map(event => fetchEnterpriseRiskAgentSingle(assessment, event)),
     ))
       .map(result => result.status === 'fulfilled' ? result.value : null)
       .filter((result): result is EnterpriseRiskAgentEventResult => Boolean(result));

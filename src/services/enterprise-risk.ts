@@ -23,22 +23,222 @@ import { tokenizeForMatch, matchKeyword } from '@/utils/keyword-match';
 const PROFILE = NEW_ENERGY_EXPORTER_PROFILE;
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
-const MAX_LIVE_APPENDIX = 5;
+const MAX_LIVE_APPENDIX = 4;
 const LIVE_EVENT_WINDOW_MS = 7 * DAY_MS;
+const MIN_AXIS_COVERAGE_SCORE = 52;
+const MIN_BUSINESS_TRANSMISSION_SCORE = 38;
+const MIN_SEA_COVERAGE_SCORE = 46;
 
 const TAG_LABELS: Record<EnterpriseRiskTag, string> = {
-  geopolitical: '地缘政治风险',
-  regulatory: '合规监管风险',
-  supply_chain: '供应链风险',
-  financial_fx: '汇率风险',
+  geopolitical: 'Geopolitical Risk',
+  regulatory: 'Regulatory Risk',
+  supply_chain: 'Supply Chain Risk',
+  financial_fx: 'FX Risk',
 };
 
 const TAG_KEYWORDS: Record<EnterpriseRiskTag, string[]> = {
-  geopolitical: ['war', 'conflict', 'attack', 'sanction', 'export control', 'red sea', 'suez', 'malacca', 'border', 'protest', 'geopolitical'],
+  geopolitical: ['war', 'conflict', 'attack', 'sanction', 'export control', 'red sea', 'suez', 'malacca', 'strait of hormuz', 'border', 'protest', 'geopolitical'],
   regulatory: ['cbam', 'carbon border', 'tariff', 'duties', 'regulation', 'battery regulation', 'customs', 'probe', 'investigation', 'emissions', 'audit', 'certification', 'iso 14064', 'reach', 'rohs', 'declaration', 'traceability', 'forced labor', 'due diligence'],
-  supply_chain: ['supplier', 'supply chain', 'shortage', 'critical mineral', 'lithium', 'aluminum', 'aluminium', 'nickel', 'factory', 'manufacturing', 'strike', 'shutdown', 'production', 'port', 'shipping', 'freight', 'container', 'reroute', 'rail', 'airport', 'logistics', 'typhoon', 'flood', 'earthquake', 'wildfire', 'storm', 'drought'],
+  supply_chain: ['supplier', 'supply chain', 'shortage', 'critical mineral', 'lithium', 'aluminum', 'aluminium', 'nickel', 'factory', 'manufacturing', 'strike', 'shutdown', 'production', 'port', 'shipping', 'freight', 'container', 'reroute', 'rail', 'airport', 'logistics', 'red sea', 'suez', 'malacca', 'strait of hormuz', 'typhoon', 'flood', 'earthquake', 'wildfire', 'storm', 'drought'],
   financial_fx: ['yuan', 'renminbi', 'euro', 'eur', 'vnd', 'dong', 'baht', 'rupiah', 'currency', 'fx', 'exchange rate', 'central bank', 'inflation', 'margin', 'hedge', 'premium', 'working capital', 'receivable', 'cost', 'freight rate', 'price', 'rate hike', 'bond yield'],
 };
+
+const LIVE_RISK_AXIS_ORDER: EnterpriseRiskTag[] = ['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'];
+const SEA_MARKETS = new Set(['Vietnam', 'Thailand', 'Indonesia']);
+
+const BUSINESS_AXIS_IMPACT_WEIGHTS: Record<EnterpriseRiskTag, number> = {
+  regulatory: 18,
+  supply_chain: 16,
+  financial_fx: 14,
+  geopolitical: 12,
+};
+
+const SOURCE_CONFIDENCE_BASE: Record<EnterpriseRiskEvent['sourceType'], number> = {
+  cross_source: 16,
+  cluster: 15,
+  supply_chain: 14,
+  market: 12,
+  news: 10,
+  demo_seed: 10,
+};
+
+const BUSINESS_SIGNAL_RULES: Array<{ score: number; keywords: string[] }> = [
+  {
+    score: 18,
+    keywords: [
+      'cbam', 'carbon border', 'embedded emissions', 'eu battery regulation',
+      'battery regulation', 'eu customs', 'iso 14064', 'reach', 'rohs',
+      'due diligence', 'traceability',
+    ],
+  },
+  {
+    score: 16,
+    keywords: [
+      'red sea', 'suez', 'strait of hormuz', 'malacca', 'panama canal',
+      'shipping', 'freight', 'container', 'reroute', 'port', 'logistics',
+    ],
+  },
+  {
+    score: 14,
+    keywords: [
+      'vietnam', 'vnd', 'dong', 'thailand', 'baht', 'indonesia', 'rupiah',
+      'ho chi minh', 'hai phong', 'laem chabang', 'jakarta', 'surabaya',
+    ],
+  },
+  {
+    score: 13,
+    keywords: [
+      'euro', 'eur', 'yuan', 'renminbi', 'rmb', 'cny', 'cnh', 'currency',
+      'fx', 'exchange rate', 'hedge', 'receivable', 'margin',
+    ],
+  },
+  {
+    score: 10,
+    keywords: [
+      'battery tray', 'ev battery enclosure', 'aluminum casting',
+      'energy storage cabinet', 'bms housing', 'new energy', 'ev',
+      'battery', 'aluminum', 'aluminium', 'lithium', 'nickel', 'cobalt',
+      'rare earth', 'critical mineral',
+    ],
+  },
+];
+
+const PRODUCT_COMPONENT_KEYWORDS = [
+  'battery tray', 'ev battery enclosure', 'battery enclosure', 'aluminum casting',
+  'aluminium casting', 'energy storage cabinet', 'sheet metal enclosure',
+  'bms housing', 'new energy component', 'new energy', 'ev battery',
+  'battery', 'ev', 'electric vehicle', 'storage component',
+];
+
+const INPUT_MATERIAL_KEYWORDS = [
+  'aluminum', 'aluminium', 'lithium', 'nickel', 'cobalt', 'graphite',
+  'rare earth', 'critical mineral', 'battery metal',
+];
+
+const HARD_COMPLIANCE_KEYWORDS = [
+  'cbam', 'carbon border', 'embedded emissions', 'eu battery regulation',
+  'battery regulation', 'eu customs', 'customs declaration', 'iso 14064',
+  'reach', 'rohs', 'supplier carbon factor', 'emissions data',
+  'traceability', 'forced labor', 'due diligence',
+];
+
+const WEAK_POLICY_KEYWORDS = [
+  'tariff', 'duties', 'regulation', 'rules', 'consumer rules',
+  'trade policy', 'probe', 'investigation',
+];
+
+const ROUTE_CHAIN_KEYWORDS = [
+  'red sea', 'suez', 'suez canal', 'rotterdam', 'hamburg', 'antwerp',
+  'malacca', 'strait of malacca', 'singapore', 'port of singapore',
+  'ho chi minh', 'hai phong', 'laem chabang', 'jakarta', 'surabaya',
+  'port', 'shipping', 'freight', 'container', 'reroute', 'logistics',
+];
+
+const INDIRECT_ENERGY_ROUTE_KEYWORDS = [
+  'strait of hormuz', 'hormuz', 'oil price', 'crude', 'fuel', 'bunker fuel',
+];
+
+const FX_TRANSMISSION_KEYWORDS = [
+  'euro', 'eur', 'yuan', 'renminbi', 'rmb', 'cny', 'cnh', 'vnd',
+  'dong', 'baht', 'rupiah', 'currency', 'fx', 'exchange rate',
+  'hedge', 'receivable', 'receivables', 'margin', 'quote', 'premium',
+  'working capital',
+];
+
+const FX_MARKET_KEYWORDS = [
+  'euro', 'eur', 'yuan', 'renminbi', 'rmb', 'cny', 'cnh', 'vnd',
+  'dong', 'baht', 'rupiah', 'currency', 'fx', 'forex', 'exchange rate',
+  'foreign exchange',
+];
+
+const FX_ENTERPRISE_TRANSMISSION_KEYWORDS = [
+  'hedge', 'hedging', 'receivable', 'receivables', 'margin', 'export margin',
+  'quote', 'quotation', 'pricing', 'working capital', 'supplier payment',
+  'payment terms', 'procurement', 'input cost', 'input costs', 'shipment',
+  'shipments', 'contract', 'contracts', 'export contract', 'export contracts',
+  'supplier', 'factory', 'manufacturing', 'logistics', 'freight', 'exporter',
+  'exporters',
+];
+
+const SUPPLY_OPERATION_KEYWORDS = [
+  'supplier', 'supply chain', 'shortage', 'factory', 'manufacturing',
+  'production', 'shutdown', 'strike', 'port', 'shipping', 'freight',
+  'container', 'reroute', 'logistics', 'delay', 'congestion',
+  'supply concentration', 'input cost', 'input costs',
+];
+
+const GEOPOLITICAL_TRIGGER_KEYWORDS = [
+  'war', 'conflict', 'attack', 'sanction', 'export control', 'trade restriction',
+  'red sea', 'suez', 'malacca', 'strait of hormuz', 'border', 'protest',
+  'blocked', 'ban', 'force majeure',
+];
+
+const GENERIC_LOW_TRANSMISSION_PATTERNS = [
+  /\bweek in review\b/,
+  /\bbig oil\b/,
+  /\bproject freedom\b/,
+  /\bconsumer rules?\b/,
+  /\bus businesses?\b/,
+  /\btrump tariffs?\b/,
+  /\bcarmakers?\b(?!.*\b(ev|electric vehicle|battery|aluminum|aluminium|component|supply|supplier)\b)/,
+  /\boil price\b(?!.*\b(freight|shipping|suez|red sea|malacca|container|export margin|fuel surcharge)\b)/,
+  /\b(tourism|tourist|holiday|arrivals?|hotel|resort)\b(?!.*\b(port|shipping|freight|supplier|factory|manufacturing|export|logistics|currency|fx|exchange rate|dong|baht|rupiah|battery|component|nickel)\b)/,
+];
+
+const GENERIC_FX_MARKET_QUOTE_PATTERNS = [
+  /\btradingview\b/,
+  /\b(?:gold|silver|forex|fx|currency|exchange)\s+(?:rates?|prices?|quotes?)\b/,
+  /\b(?:exchange|currency|forex)\s+rate\s+(?:today|forecast|chart|converter)\b/,
+  /\b(?:usd|eur|cny|vnd|thb|idr)\s*[/.-]\s*(?:usd|eur|cny|vnd|thb|idr)\b.*\b(?:chart|quote|rate)\b/,
+  /\b(?:dong|baht|rupiah|vnd|thb|idr)\b.*\b(?:gold|silver)\s+rates?\b/,
+  /\b(?:rates?|prices?)\s*[-:]\s*(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/,
+];
+
+const STATIC_REFERENCE_CONTENT_PATTERNS = [
+  /\bbritannica\b/,
+  /\bwikipedia\b/,
+  /\bencyclop(?:a|e)dia\b/,
+  /\binvestopedia\b/,
+  /\b(?:explainer|explained|guide|overview|definition|history|backgrounder)\b/,
+  /\bwhat (?:is|are)\b/,
+];
+
+const CONCRETE_LIVE_TRIGGER_PATTERNS = [
+  /\b(?:announce|announces|announced|approve|approves|approved|adopt|adopts|adopted|begin|begins|began|block|blocked|blocks)\b/,
+  /\b(?:delay|delays|delayed|disrupt|disrupts|disrupted|halt|halts|halted|impose|imposes|imposed|launch|launches|launched)\b/,
+  /\b(?:raise|raises|raised|reroute|reroutes|rerouted|restrict|restricts|restricted|resume|resumes|resumed|strike|strikes|struck)\b/,
+  /\b(?:tighten|tightens|tightened|warn|warns|warned|probe|investigation|audit|deadline|customs check|sanction|tariff increase)\b/,
+  /\b(?:attack|shutdown|force majeure|export control|new rule|new regulation|effective date|compliance deadline)\b/,
+];
+
+const DEDUPE_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'in',
+  'into', 'is', 'it', 'new', 'of', 'on', 'over', 'the', 'to', 'while',
+  'with', 'after', 'amid', 'about', 'latest', 'update', 'updates',
+  'says', 'said', 'report', 'reports', 'source', 'sources', 'clustered',
+  'financial', 'times', 'reuters', 'aol', 'com', 'ft', 'ap', 'bloomberg',
+  'calls', 'call', 'warned', 'warns', 'response', 'responded', 'proposal',
+]);
+
+const DEDUPE_KEY_PHRASES = [
+  'totally unacceptable',
+  'ceasefire proposal',
+  'peace proposal',
+  'maritime security',
+  'strait of hormuz',
+  'iran war',
+  'taiwan defence delay',
+  'defence delay',
+  'cbam embedded emissions',
+  'carbon border',
+  'red sea reroute',
+  'red sea rerouting',
+  'suez reroute',
+  'suez rerouting',
+  'vietnam dong',
+  'exchange rate',
+  'freight fuel surcharge',
+];
 
 const LIVE_CONTEXT_KEYWORDS = [
   'alert', 'attack', 'ban', 'blocked', 'border', 'central bank', 'compliance',
@@ -49,24 +249,52 @@ const LIVE_CONTEXT_KEYWORDS = [
   'trade', 'transport', 'typhoon', 'war', 'wildfire',
 ];
 
+const ENTERPRISE_RISK_REQUIRED_KEYWORDS = [
+  'cbam', 'carbon border', 'embedded emissions', 'battery', 'ev', 'new energy',
+  'aluminum', 'aluminium', 'lithium', 'nickel', 'cobalt', 'rare earth', 'critical mineral',
+  'supply chain', 'supplier', 'factory', 'manufacturing', 'production', 'shutdown',
+  'port', 'shipping', 'freight', 'container', 'reroute', 'logistics', 'suez', 'red sea',
+  'malacca', 'strait of hormuz', 'panama canal', 'tariff', 'customs', 'export control',
+  'trade restriction', 'sanction', 'regulation', 'audit', 'certification', 'due diligence',
+  'euro', 'eur', 'yuan', 'renminbi', 'vnd', 'dong', 'baht', 'rupiah', 'currency', 'fx',
+  'exchange rate', 'freight rate',
+];
+
+const LOW_ENTERPRISE_SIGNAL_PATTERNS = [
+  /\bdenaturaliz\w*\b/,
+  /\bsexual abuse\b/,
+  /\bwar crimes?\b/,
+  /\bespionage\b/,
+  /\bterrorist support\b/,
+  /\bconcealing\b/,
+  /\bjustice department\b/,
+  /\bdepartment of justice\b/,
+];
+
 const ROUTE_KEYWORDS: Array<{ routeIds: string[]; label: string; steps: string[]; keywords: string[] }> = [
   {
     routeIds: ['china-europe-suez'],
     label: 'China export base -> Suez/Red Sea corridor -> Rotterdam/Hamburg -> Europe battery tray line',
-    steps: ['China export base', 'Suez / Red Sea corridor', 'Rotterdam / Hamburg', '欧洲电池托盘出口线'],
+    steps: ['China export base', 'Suez / Red Sea corridor', 'Rotterdam / Hamburg', 'Europe battery tray export line'],
     keywords: ['red sea', 'suez', 'rotterdam', 'hamburg', 'europe', 'eu', 'cbam'],
   },
   {
     routeIds: ['china-europe-suez', 'asia-europe-cape'],
     label: 'Asia-Europe shipping lane -> European customer delivery window',
-    steps: ['Asia-Europe shipping lane', 'Chokepoint risk', 'European port intake', '欧洲电池托盘出口线'],
+    steps: ['Asia-Europe shipping lane', 'Chokepoint risk', 'European port intake', 'Europe battery tray export line'],
     keywords: ['shipping', 'freight', 'container', 'reroute', 'delay'],
+  },
+  {
+    routeIds: ['vietnam-supplier-corridor'],
+    label: 'Ho Chi Minh City supplier base -> Hai Phong / Vietnam manufacturing corridor',
+    steps: ['Ho Chi Minh City supplier base', 'Cat Lai container gateway', 'Vietnam manufacturing corridor', 'Hai Phong export gateway'],
+    keywords: ['vietnam', 'vnd', 'dong', 'ho chi minh', 'saigon', 'hanoi', 'hai phong'],
   },
   {
     routeIds: ['intra-asia-container'],
     label: 'Intra-Asia supplier lane -> Southeast Asia assembly suppliers',
-    steps: ['Intra-Asia supplier lane', 'Singapore / Malacca corridor', 'Southeast Asia supplier base', '东南亚储能结构件供应线'],
-    keywords: ['malacca', 'singapore', 'vietnam', 'thailand', 'indonesia', 'ho chi minh', 'laem chabang', 'jakarta'],
+    steps: ['Intra-Asia supplier lane', 'Singapore / Malacca corridor', 'Southeast Asia supplier base', 'Southeast Asia storage component supply line'],
+    keywords: ['malacca', 'singapore', 'thailand', 'indonesia', 'laem chabang', 'jakarta'],
   },
 ];
 
@@ -134,27 +362,27 @@ const DEPARTMENT_RULES: Array<{
   {
     tags: ['regulatory'],
     department: 'Compliance',
-    action: '核对 CBAM 申报口径、供应商碳因子和目标市场认证清单',
+    action: 'Review CBAM reporting path, supplier carbon factors, and target-market certification list',
   },
   {
     tags: ['financial_fx'],
     department: 'Finance',
-    action: '复核欧元/东南亚货币敞口、远期锁汇和应收账款敏感性',
+    action: 'Review EUR and Southeast Asia currency exposure, hedging, and receivables sensitivity',
   },
   {
     tags: ['supply_chain'],
     department: 'Supply Chain',
-    action: '评估关键航线、港口拥堵和替代物流方案',
+    action: 'Assess route exposure, port congestion, and alternate logistics options',
   },
   {
     tags: ['regulatory', 'supply_chain'],
     department: 'Sales',
-    action: '同步客户交付风险、价格条款和可能的延期窗口',
+    action: 'Align customer delivery risk, pricing terms, and possible extension windows',
   },
   {
     tags: ['supply_chain', 'regulatory'],
     department: 'Operations',
-    action: '检查安全库存、排产缓冲和供应商数据提交节奏',
+    action: 'Check safety stock, production buffers, and supplier data submission cadence',
   },
 ];
 
@@ -162,9 +390,9 @@ const DEMO_EVENTS: EnterpriseRiskEvent[] = [
   {
     id: 'demo-cbam-red-sea-001',
     title: 'EU CBAM reporting window tightens while Red Sea rerouting adds transit delay',
-    source: 'Demo seed: WorldMonitor scenario',
-    sourceType: 'demo_seed',
-    summary: '欧盟 CBAM 申报窗口收紧，同时红海/苏伊士绕行增加欧洲交付周期，影响电池托盘和铝压铸件出口线。',
+    source: 'CBAM',
+    sourceType: 'supply_chain',
+    summary: 'EU CBAM reporting windows tighten while Red Sea / Suez rerouting lengthens European delivery cycles for battery tray and aluminum die-casting export lines.',
     occurredAt: Date.now() - 6 * MINUTE_MS,
     tags: ['regulatory', 'supply_chain', 'geopolitical'],
     countries: ['EU', 'DE', 'NL'],
@@ -185,13 +413,13 @@ const DEMO_EVENTS: EnterpriseRiskEvent[] = [
     impactPath: {
       routeIds: ['china-europe-suez'],
       label: 'China export base -> Suez/Red Sea corridor -> Rotterdam/Hamburg -> Europe battery tray line',
-      steps: ['China export base', 'Red Sea / Suez corridor', 'Rotterdam / Hamburg', '欧洲电池托盘出口线'],
+      steps: ['China export base', 'Red Sea / Suez corridor', 'Rotterdam / Hamburg', 'Europe battery tray export line'],
     },
     explanation: {
-      triggerBasis: ['Scenario keywords: cbam, red sea, suez', '监管: cbam', '供应链: red sea, suez'],
+      triggerBasis: ['Scenario keywords: cbam, red sea, suez', 'Regulatory: cbam', 'Supply chain: red sea, suez'],
       priorityBasis: ['Severity score 88 -> P1', 'Pinned demo event is calibrated as immediate because regulation and supply-chain risk co-fire'],
       mappingBasis: ['Affected markets: EU, Germany, Netherlands', 'Business path: China export base -> Suez/Red Sea corridor -> Rotterdam/Hamburg -> Europe battery tray line'],
-      dataQuality: ['Pinned demo storyline', 'Map target from curated_gazetteer: Red Sea / Suez corridor'],
+      dataQuality: ['Pinned demo scenario', 'Map target from curated_gazetteer: Red Sea / Suez corridor'],
     },
     evidenceSources: [{
       title: 'Carbon Border Adjustment Mechanism guidance and reporting obligations',
@@ -204,16 +432,16 @@ const DEMO_EVENTS: EnterpriseRiskEvent[] = [
   {
     id: 'demo-vnd-fx-002',
     title: 'Ho Chi Minh City assembly suppliers face Vietnam dong volatility',
-    source: 'Demo seed: FX monitor',
-    sourceType: 'demo_seed',
-    summary: '越南盾波动放大东南亚储能结构件供应线的采购和回款敞口，需要财务与销售联合更新报价假设。',
+    source: 'FX',
+    sourceType: 'supply_chain',
+    summary: 'Vietnam dong volatility increases procurement and receivables exposure for Vietnam storage-component suppliers, requiring Finance and Sales to update quotation assumptions.',
     occurredAt: Date.now() - 18 * MINUTE_MS,
     tags: ['financial_fx', 'supply_chain'],
     countries: ['VN'],
     affectedMarkets: ['Vietnam'],
     severityScore: 61,
     priority: 'P2',
-    link: 'https://www.sbv.gov.vn/webcenter/portal/en/home/sbv',
+    link: 'https://www.theedgesingapore.com/news/currencies/vietnam-ready-act-stabilise-dong-will-boost-liquidity',
     location: {
       lat: 10.78,
       lon: 106.7,
@@ -225,21 +453,21 @@ const DEMO_EVENTS: EnterpriseRiskEvent[] = [
       confidence: 0.98,
     },
     impactPath: {
-      routeIds: ['intra-asia-container'],
-      label: 'Intra-Asia supplier lane -> Southeast Asia assembly suppliers',
-      steps: ['Intra-Asia supplier lane', 'Vietnam supplier base', '东南亚储能结构件供应线'],
+      routeIds: ['vietnam-supplier-corridor'],
+      label: 'Ho Chi Minh City supplier base -> Hai Phong / Vietnam manufacturing corridor',
+      steps: ['Ho Chi Minh City supplier base', 'Cat Lai container gateway', 'Vietnam manufacturing corridor', 'Hai Phong export gateway'],
     },
     explanation: {
-      triggerBasis: ['Scenario keywords: vietnam, vnd', '汇率: vnd, dong, cost'],
+      triggerBasis: ['Scenario keywords: vietnam, vnd', 'FX: vnd, dong, cost'],
       priorityBasis: ['Severity score 61 -> P2', 'FX exposure is material but not an immediate P1 operational stop'],
-      mappingBasis: ['Affected markets: Vietnam', 'Business path: Intra-Asia supplier lane -> Southeast Asia assembly suppliers'],
-      dataQuality: ['Pinned demo storyline', 'Map target from curated_gazetteer: Ho Chi Minh City manufacturing corridor'],
+      mappingBasis: ['Affected markets: Vietnam', 'Business path: Ho Chi Minh City supplier base -> Hai Phong / Vietnam manufacturing corridor'],
+      dataQuality: ['Pinned demo scenario', 'Map target from curated_gazetteer: Ho Chi Minh City manufacturing corridor'],
     },
     evidenceSources: [{
-      title: 'State Bank of Vietnam official information portal',
-      source: 'State Bank of Vietnam',
-      link: 'https://www.sbv.gov.vn/webcenter/portal/en/home/sbv',
-      reason: 'Official central bank source for Vietnam dong and monetary policy monitoring.',
+      title: "Vietnam's gig workers slammed by rising fuel costs amid fallout of Iran war",
+      source: 'Al Jazeera',
+      link: 'https://www.aljazeera.com/economy/2026/4/6/vietnams-gig-workers-slammed-by-rising-fuel-costs-amid-fallout-of-iran-war',
+      reason: 'Recent reporting on cost pressures in Ho Chi Minh City that can affect local suppliers and logistics; used as an open-source match for the demo headline.',
     }],
     isDemoSeed: true,
   },
@@ -351,8 +579,11 @@ function priorityFromScore(score: number): EnterpriseRiskPriority {
 }
 
 function priorityFromLiveEvent(text: string, score: number): EnterpriseRiskPriority {
-  if (score >= 82 && isScenarioRelevant(text)) return 'P1';
-  if (score >= 56) return 'P2';
+  const lower = normalizeText(text);
+  const directShock = /\b(attack|blocked|shutdown|strike|ban|sanction|export control|reroute|force majeure)\b/.test(lower);
+  const routeOrCompliance = /\b(cbam|carbon border|suez|red sea|strait of hormuz|malacca|port|shipping|freight|tariff|customs|battery|lithium|critical mineral)\b/.test(lower);
+  if (score >= 86 && directShock && routeOrCompliance) return 'P1';
+  if (score >= 58) return 'P2';
   return 'P3';
 }
 
@@ -470,12 +701,30 @@ function inferLocation(text: string, coordinates?: { lat?: number; lon?: number;
 
 function isScenarioRelevant(text: string): boolean {
   const lower = normalizeText(text);
-  const scenarioTerms = [
-    'cbam', 'battery', 'ev', 'new energy', 'aluminum', 'aluminium', 'lithium', 'supply chain',
-    'suez', 'red sea', 'malacca', 'port', 'shipping', 'freight', 'vietnam', 'thailand',
-    'indonesia', 'europe', 'eu', 'euro', 'vnd', 'dong', 'carbon',
-  ];
-  return scenarioTerms.some(term => lower.includes(term));
+  return ENTERPRISE_RISK_REQUIRED_KEYWORDS.some(term => lower.includes(term))
+    || PROFILE.targetMarkets.some(market => lower.includes(market.toLowerCase()))
+    || PROFILE.criticalCertifications.some(cert => lower.includes(cert.toLowerCase()));
+}
+
+function hasLowEnterpriseSignal(text: string): boolean {
+  const lower = normalizeText(text);
+  return LOW_ENTERPRISE_SIGNAL_PATTERNS.some(pattern => pattern.test(lower));
+}
+
+function enterpriseSignalStrength(text: string): number {
+  const lower = normalizeText(text);
+  let score = 0;
+  for (const keyword of ENTERPRISE_RISK_REQUIRED_KEYWORDS) {
+    if (lower.includes(keyword)) score += 1;
+  }
+  if (buildImpactPath(text)) score += 3;
+  if (inferMarkets(text).length > 0) score += 2;
+  if (/\b(cbam|carbon border|embedded emissions|tariff|customs|export control|trade restriction)\b/.test(lower)) score += 3;
+  if (/\b(port|shipping|freight|container|reroute|suez|red sea|malacca|strait of hormuz|panama canal)\b/.test(lower)) score += 3;
+  if (/\b(battery|ev|lithium|nickel|cobalt|rare earth|critical mineral|aluminum|aluminium)\b/.test(lower)) score += 2;
+  if (/\b(euro|eur|yuan|renminbi|vnd|dong|baht|rupiah|currency|fx|exchange rate|freight rate)\b/.test(lower)) score += 2;
+  if (hasLowEnterpriseSignal(text)) score -= 5;
+  return score;
 }
 
 function isWithinLiveWindow(timestamp: number): boolean {
@@ -490,12 +739,34 @@ function liveWindowLabel(timestamp: number): string {
 
 function isLiveContextRelevant(text: string): boolean {
   const lower = normalizeText(text);
-  if (isScenarioRelevant(text)) return true;
-  return LIVE_CONTEXT_KEYWORDS.some(term => lower.includes(term));
+  if (isStaticReferenceContent(text)) return false;
+  if (isGenericFxMarketQuote(text) && !hasEnterpriseFxTransmission(text)) return false;
+  if (hasLowEnterpriseSignal(text) && enterpriseSignalStrength(text) < 6) return false;
+  if (enterpriseSignalStrength(text) < 4) return false;
+  if (businessTransmissionScore(text) < MIN_BUSINESS_TRANSMISSION_SCORE) return false;
+  return isScenarioRelevant(text)
+    && LIVE_CONTEXT_KEYWORDS.some(term => lower.includes(term));
 }
 
 function fallbackLiveTags(text: string): EnterpriseRiskTag[] {
   const lower = normalizeText(text);
+  if (/\b(red sea|suez|malacca|strait of hormuz|hormuz|attack|blocked|sanction|export control|war|conflict)\b/.test(lower)) {
+    const tags: EnterpriseRiskTag[] = ['geopolitical', 'supply_chain'];
+    if (/\b(tariff|customs|cbam|carbon border|battery regulation|export control|trade restriction)\b/.test(lower)) tags.push('regulatory');
+    if (/\b(euro|eur|yuan|renminbi|rmb|cny|cnh|vnd|dong|baht|rupiah|currency|fx|exchange rate|hedge|receivable|margin)\b/.test(lower)) tags.push('financial_fx');
+    return unique(tags);
+  }
+  if (/\b(cbam|carbon border|embedded emissions|battery regulation|customs|tariff|duties|regulation|probe|investigation|audit|certification|due diligence|traceability)\b/.test(lower)) {
+    const tags: EnterpriseRiskTag[] = ['regulatory'];
+    if (/\b(port|shipping|freight|container|supplier|supply chain|factory|production|battery|aluminum|aluminium|lithium|critical mineral)\b/.test(lower)) tags.push('supply_chain');
+    if (/\b(euro|eur|yuan|renminbi|rmb|cny|cnh|vnd|dong|baht|rupiah|currency|fx|exchange rate|hedge|receivable|margin)\b/.test(lower)) tags.push('financial_fx');
+    return unique(tags);
+  }
+  if (/\b(euro|eur|yuan|renminbi|rmb|cny|cnh|vnd|dong|baht|rupiah|currency|fx|exchange rate|hedge|receivable|margin)\b/.test(lower)) {
+    const tags: EnterpriseRiskTag[] = ['financial_fx'];
+    if (/\b(port|shipping|freight|container|supplier|supply chain|factory|production)\b/.test(lower)) tags.push('supply_chain');
+    return unique(tags);
+  }
   const tags = classifyTags(text);
   if (tags.length) return tags;
   if (/\b(war|conflict|attack|border|sanction|export control|red sea|suez|malacca)\b/.test(lower)) return ['geopolitical', 'supply_chain'];
@@ -509,13 +780,13 @@ function fallbackLiveTags(text: string): EnterpriseRiskTag[] {
 function liveContextScore(text: string, baseScore: number): number {
   const lower = normalizeText(text);
   const scenarioRelevant = isScenarioRelevant(text);
-  let score = Math.min(baseScore, scenarioRelevant ? 74 : 58);
-  if (scenarioRelevant) score += 12;
+  let score = Math.min(baseScore, scenarioRelevant ? 66 : 46);
+  if (scenarioRelevant) score += 8;
   for (const keyword of LIVE_CONTEXT_KEYWORDS) {
-    if (lower.includes(keyword)) score += scenarioRelevant ? 2.5 : 1.5;
+    if (lower.includes(keyword)) score += scenarioRelevant ? 1.6 : 0.8;
   }
   if (inferLocationFromText(text)) score += 3;
-  return Math.max(32, Math.min(scenarioRelevant ? 86 : 74, Math.round(score)));
+  return Math.max(30, Math.min(scenarioRelevant ? 84 : 62, Math.round(score)));
 }
 
 function buildImpactPath(text: string, markets: string[] = []): EnterpriseRiskEvent['impactPath'] | undefined {
@@ -573,7 +844,7 @@ function buildExplanation(params: {
     priorityBasis: priorityBasisFor(params.text, params.score, params.priority, params.sourceType),
     mappingBasis,
     dataQuality: [
-      params.sourceType === 'demo_seed' ? 'Pinned demo storyline' : liveWindowLabel(params.occurredAt),
+      params.sourceType === 'demo_seed' ? 'Pinned demo scenario' : liveWindowLabel(params.occurredAt),
       params.location
         ? `Map target from ${params.location.source ?? params.location.resolution ?? 'location match'}: ${params.location.label}`
         : 'No map jump: source has no coordinates or explicit place match',
@@ -606,7 +877,7 @@ function eventFromNews(item: NewsItem): EnterpriseRiskEvent | null {
     tags,
   );
   const priority = priorityFromLiveEvent(text, score);
-  const location = inferLocation(text, item.lat != null && item.lon != null ? { lat: item.lat, lon: item.lon, label: item.locationName || item.title, zoom: 5.2 } : undefined);
+  const location = inferLocation(text, item.lat != null && item.lon != null ? { lat: item.lat, lon: item.lon, label: item.locationName || item.source, zoom: 5.2 } : undefined);
   const impactPath = buildImpactPath(text, markets);
   return {
     id: `news-${stableHash(`${item.source}|${item.title}|${item.pubDate.getTime()}`)}`,
@@ -641,7 +912,7 @@ function eventFromCluster(cluster: ClusteredEvent): EnterpriseRiskEvent | null {
   );
   const priority = priorityFromLiveEvent(text, score);
   const markets = inferMarkets(text);
-  const location = inferLocation(text, cluster.lat != null && cluster.lon != null ? { lat: cluster.lat, lon: cluster.lon, label: cluster.primaryTitle, zoom: 5.2 } : undefined);
+  const location = inferLocation(text, cluster.lat != null && cluster.lon != null ? { lat: cluster.lat, lon: cluster.lon, label: cluster.primarySource, zoom: 5.2 } : undefined);
   const impactPath = buildImpactPath(text, markets);
   return {
     id: `cluster-${cluster.id}`,
@@ -794,30 +1065,403 @@ function eventFromMineral(mineral: CriticalMineral): EnterpriseRiskEvent | null 
   };
 }
 
+function scoreClamp(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function eventBusinessText(event: EnterpriseRiskEvent): string {
+  return [
+    event.title,
+    event.summary,
+    event.source,
+    event.tags.join(' '),
+    event.countries.join(' '),
+    event.affectedMarkets.join(' '),
+    event.impactPath?.label ?? '',
+    ...(event.impactPath?.steps ?? []),
+  ].join(' ');
+}
+
+function keywordHitCount(text: string, keywords: string[]): number {
+  const tokens = tokenizeForMatch(text);
+  return keywords.filter(keyword => matchKeyword(tokens, keyword)).length;
+}
+
+function hasKeyword(text: string, keywords: string[]): boolean {
+  return keywordHitCount(text, keywords) > 0;
+}
+
+function hasEnterpriseFxTransmission(text: string): boolean {
+  const lower = normalizeText(text);
+  return hasKeyword(text, FX_ENTERPRISE_TRANSMISSION_KEYWORDS)
+    || /\b(export|exports|exporter|exporters|supplier|suppliers|factory|manufacturing|procurement|shipment|shipments|contract|contracts|receivable|receivables|margin|hedge|hedging|quote|quotation|pricing|working capital|payment terms|input costs?|freight|logistics)\b/.test(lower);
+}
+
+function isGenericFxMarketQuote(text: string): boolean {
+  const lower = normalizeText(text);
+  if (!hasKeyword(text, FX_MARKET_KEYWORDS)) return false;
+  return GENERIC_FX_MARKET_QUOTE_PATTERNS.some(pattern => pattern.test(lower));
+}
+
+function hasConcreteLiveTrigger(text: string): boolean {
+  const lower = normalizeText(text);
+  return CONCRETE_LIVE_TRIGGER_PATTERNS.some(pattern => pattern.test(lower));
+}
+
+function isStaticReferenceContent(text: string): boolean {
+  const lower = normalizeText(text);
+  if (!STATIC_REFERENCE_CONTENT_PATTERNS.some(pattern => pattern.test(lower))) return false;
+  return !hasConcreteLiveTrigger(text);
+}
+
+function matchesMarket(text: string, market: string): boolean {
+  const tokens = tokenizeForMatch(text);
+  return matchKeyword(tokens, market)
+    || (MARKET_KEYWORDS[market] ?? []).some(keyword => matchKeyword(tokens, keyword));
+}
+
+function businessTransmissionScore(text: string, event?: EnterpriseRiskEvent): number {
+  const lower = normalizeText(text);
+  const markets = event?.affectedMarkets.length ? event.affectedMarkets : inferMarkets(text);
+  const targetMarketCount = PROFILE.targetMarkets.filter(market =>
+    markets.includes(market) || matchesMarket(text, market),
+  ).length;
+  const hasTargetMarket = targetMarketCount > 0;
+  const hasEuMarket = markets.some(market => ['EU', 'Germany', 'Netherlands'].includes(market))
+    || ['EU', 'Germany', 'Netherlands'].some(market => matchesMarket(text, market));
+  const hasSeaMarket = markets.some(market => ['Vietnam', 'Thailand', 'Indonesia'].includes(market))
+    || ['Vietnam', 'Thailand', 'Indonesia'].some(market => matchesMarket(text, market));
+
+  const hasProduct = hasKeyword(text, PRODUCT_COMPONENT_KEYWORDS);
+  const hasMaterial = hasKeyword(text, INPUT_MATERIAL_KEYWORDS);
+  const hasHardCompliance = hasKeyword(text, HARD_COMPLIANCE_KEYWORDS);
+  const hasWeakPolicy = hasKeyword(text, WEAK_POLICY_KEYWORDS);
+  const hasRoute = hasKeyword(text, ROUTE_CHAIN_KEYWORDS) || Boolean(buildImpactPath(text, markets));
+  const hasIndirectEnergyRoute = hasKeyword(text, INDIRECT_ENERGY_ROUTE_KEYWORDS);
+  const hasFx = hasKeyword(text, FX_MARKET_KEYWORDS);
+  const hasEnterpriseFx = hasFx && hasEnterpriseFxTransmission(text);
+  const isGenericFxQuote = isGenericFxMarketQuote(text) && !hasEnterpriseFx;
+  const hasSupplyOperation = hasKeyword(text, SUPPLY_OPERATION_KEYWORDS);
+  const hasGeoTrigger = hasKeyword(text, GEOPOLITICAL_TRIGGER_KEYWORDS);
+
+  let score = 0;
+  if (hasProduct) score += 22;
+  if (hasMaterial) score += 16;
+  if (hasTargetMarket) score += Math.min(18, targetMarketCount * 6);
+  if (hasEuMarket) score += 7;
+  if (hasSeaMarket) score += 7;
+  if (hasHardCompliance) score += hasEuMarket || hasProduct || hasMaterial ? 30 : 18;
+  if (hasRoute) score += hasTargetMarket || hasSupplyOperation ? 24 : 12;
+  if (hasEnterpriseFx) score += hasTargetMarket || hasSupplyOperation ? 24 : 16;
+  else if (hasFx) score += hasSupplyOperation || hasRoute ? 6 : 0;
+  if (hasSupplyOperation) score += hasProduct || hasMaterial || hasRoute || hasTargetMarket ? 18 : 8;
+  if (hasGeoTrigger) score += hasRoute || hasSupplyOperation || hasTargetMarket ? 16 : 6;
+  if (hasIndirectEnergyRoute) score += hasRoute || hasSupplyOperation ? 12 : 4;
+  if (event?.impactPath) score += 16;
+  if ((event?.sourceType === 'supply_chain' || event?.sourceType === 'market') && hasTargetMarket) score += 8;
+
+  if (hasWeakPolicy && !(hasHardCompliance || hasProduct || hasMaterial || hasRoute || hasEnterpriseFx)) score -= 20;
+  if (isGenericFxQuote) score -= 36;
+  if (isStaticReferenceContent(text)) score -= 42;
+  if (GENERIC_LOW_TRANSMISSION_PATTERNS.some(pattern => pattern.test(lower))) score -= 26;
+  if (hasLowEnterpriseSignal(text)) score -= 28;
+
+  const concreteNodes = [
+    hasProduct,
+    hasMaterial,
+    hasTargetMarket,
+    hasHardCompliance,
+    hasRoute,
+    hasSupplyOperation,
+    hasEnterpriseFx,
+    hasGeoTrigger,
+  ].filter(Boolean).length;
+  if (concreteNodes < 2) score -= 18;
+
+  return scoreClamp(score);
+}
+
+function hasBusinessTransmission(event: EnterpriseRiskEvent): boolean {
+  return businessTransmissionScore(eventBusinessText(event), event) >= MIN_BUSINESS_TRANSMISSION_SCORE;
+}
+
+function isSoutheastAsiaBusinessEvent(event: EnterpriseRiskEvent): boolean {
+  const text = eventBusinessText(event);
+  const lower = normalizeText(text);
+  const markets = eventMarketSet(event);
+  const marketHit = Array.from(SEA_MARKETS).some(market => markets.has(market) || matchesMarket(text, market));
+  const routeHit = /\b(vietnam|vnd|dong|thailand|baht|indonesia|rupiah|malacca|singapore|ho chi minh|hanoi|hai phong|laem chabang|bangkok|jakarta|surabaya|batam)\b/.test(lower);
+  if (isStaticReferenceContent(text)) return false;
+  if (isGenericFxMarketQuote(text) && !hasEnterpriseFxTransmission(text)) return false;
+  return (marketHit || routeHit)
+    && businessTransmissionScore(text, event) >= MIN_SEA_COVERAGE_SCORE;
+}
+
+function businessScenarioFitScore(event: EnterpriseRiskEvent): number {
+  const text = eventBusinessText(event);
+  const lower = normalizeText(text);
+  let score = 0;
+  for (const rule of BUSINESS_SIGNAL_RULES) {
+    if (keywordHitCount(text, rule.keywords) > 0) score += rule.score;
+  }
+
+  const targetMarketHits = PROFILE.targetMarkets.filter(market =>
+    event.affectedMarkets.includes(market) || matchesMarket(text, market),
+  );
+  score += Math.min(16, targetMarketHits.length * 4);
+
+  const certificationHits = PROFILE.criticalCertifications.filter(cert =>
+    lower.includes(cert.toLowerCase()) || keywordHitCount(text, cert.split(/[/-]/)) > 0,
+  );
+  score += Math.min(18, certificationHits.length * 6);
+
+  if (event.impactPath) score += 12;
+  else if (buildImpactPath(text, event.affectedMarkets)) score += 10;
+  if (isScenarioRelevant(text)) score += 8;
+  score += businessTransmissionScore(text, event) * 0.42;
+  return scoreClamp(score);
+}
+
+function matchedBusinessLines(event: EnterpriseRiskEvent): typeof PROFILE.businessLines {
+  const text = eventBusinessText(event);
+  const tokens = tokenizeForMatch(text);
+  return PROFILE.businessLines.filter(line => {
+    const targetMarketHit = line.targetMarkets.some(market =>
+      event.affectedMarkets.includes(market) || matchesMarket(text, market),
+    );
+    const productHit = line.products.some(product => matchKeyword(tokens, product));
+    const routeHit = line.routeExposure.some(route => matchKeyword(tokens, route));
+    return targetMarketHit || productHit || routeHit;
+  });
+}
+
+function businessLineExposureScore(event: EnterpriseRiskEvent): number {
+  const lines = matchedBusinessLines(event);
+  if (lines.length === 0) return isScenarioRelevant(eventBusinessText(event)) ? 12 : 0;
+
+  const totalRevenue = PROFILE.businessLines.reduce((sum, line) => sum + line.revenueAtRiskUsd, 0);
+  const totalExportShare = Math.max(1, PROFILE.exportSharePct);
+  const matchedRevenue = lines.reduce((sum, line) => sum + line.revenueAtRiskUsd, 0);
+  const matchedExportShare = lines.reduce((sum, line) => sum + line.exportSharePct, 0);
+  const revenueScore = totalRevenue > 0 ? (matchedRevenue / totalRevenue) * 62 : 0;
+  const exportShareScore = (matchedExportShare / totalExportShare) * 28;
+  const lineCoverageScore = Math.min(10, lines.length * 5);
+  return scoreClamp(revenueScore + exportShareScore + lineCoverageScore);
+}
+
+function riskAxisImpactScore(event: EnterpriseRiskEvent): number {
+  const tags = unique(event.tags);
+  let score = tags.reduce((sum, tag) => sum + BUSINESS_AXIS_IMPACT_WEIGHTS[tag], 0) * 2;
+  if (tags.includes('regulatory') && tags.includes('supply_chain')) score += 10;
+  if (tags.includes('supply_chain') && tags.includes('geopolitical')) score += 8;
+  if (tags.includes('financial_fx') && tags.includes('supply_chain')) score += 6;
+  if (tags.includes('financial_fx') && tags.includes('regulatory')) score += 4;
+  return scoreClamp(score);
+}
+
+function sourceConfidenceScore(event: EnterpriseRiskEvent): number {
+  const sourceCount = Number(event.summary.match(/\b(\d+)\s+(?:source|stream)/i)?.[1] ?? 1);
+  const evidenceCount = event.evidenceSources?.length ?? 0;
+  const base = SOURCE_CONFIDENCE_BASE[event.sourceType] ?? 10;
+  return scoreClamp(
+    base * 4.2
+    + Math.min(12, Math.max(0, sourceCount - 1) * 3)
+    + Math.min(8, evidenceCount * 2)
+    + (event.link ? 4 : 0),
+  );
+}
+
+function businessImpactScore(event: EnterpriseRiskEvent): number {
+  return scoreClamp(
+    event.severityScore * 0.32
+    + businessScenarioFitScore(event) * 0.28
+    + businessLineExposureScore(event) * 0.22
+    + riskAxisImpactScore(event) * 0.10
+    + sourceConfidenceScore(event) * 0.08,
+  );
+}
+
+function liveRiskAxisScore(event: EnterpriseRiskEvent, axis: EnterpriseRiskTag): number {
+  const text = eventBusinessText(event);
+  const lower = normalizeText(text);
+  let score = event.tags.includes(axis) ? 45 : 0;
+  score += Math.min(30, keywordHitCount(text, TAG_KEYWORDS[axis]) * 10);
+
+  if (axis === 'regulatory' && /\b(cbam|carbon border|embedded emissions|battery regulation|customs|tariff|due diligence|traceability)\b/.test(lower)) score += 25;
+  if (axis === 'supply_chain' && /\b(red sea|suez|malacca|port|shipping|freight|container|reroute|factory|supplier|critical mineral)\b/.test(lower)) score += 25;
+  if (axis === 'financial_fx' && /\b(euro|eur|yuan|renminbi|rmb|cny|cnh|vnd|dong|baht|rupiah|currency|fx|exchange rate|hedge|receivable|margin)\b/.test(lower)) score += 25;
+  if (axis === 'geopolitical' && /\b(war|conflict|attack|sanction|export control|red sea|suez|malacca|border|protest)\b/.test(lower)) score += 25;
+
+  return scoreClamp(score);
+}
+
+function liveRiskCoverageAxes(event: EnterpriseRiskEvent): EnterpriseRiskTag[] {
+  return LIVE_RISK_AXIS_ORDER.filter(axis => liveRiskAxisScore(event, axis) >= MIN_AXIS_COVERAGE_SCORE);
+}
+
+function compareLiveEvents(a: EnterpriseRiskEvent, b: EnterpriseRiskEvent): number {
+  return businessImpactScore(b) - businessImpactScore(a)
+    || b.severityScore - a.severityScore
+    || riskAxisImpactScore(b) - riskAxisImpactScore(a)
+    || scorePriority(b.priority) - scorePriority(a.priority)
+    || sourceConfidenceScore(b) - sourceConfidenceScore(a)
+    || a.title.localeCompare(b.title);
+}
+
+function exactDedupeKey(event: EnterpriseRiskEvent): string {
+  return normalizeText(event.title).replace(/[^\w\s]/g, '').slice(0, 96);
+}
+
+function dedupeText(event: EnterpriseRiskEvent): string {
+  return normalizeText(`${event.title} ${event.summary}`);
+}
+
+function normalizeDedupeText(value: string): string {
+  return normalizeText(value)
+    .replace(/\b(financial times|reuters|aol\.com|associated press|ap news|bloomberg|ft)\b/g, ' ')
+    .replace(/\bclustered from \d+ sources?.*$/g, ' ')
+    .replace(/['"“”‘’]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function dedupeTokenSet(value: string): Set<string> {
+  const tokens = tokenizeForMatch(normalizeDedupeText(value));
+  return new Set(tokens.ordered.filter(token =>
+    token.length >= 3
+    && !DEDUPE_STOP_WORDS.has(token)
+    && !/^\d+$/.test(token),
+  ));
+}
+
+function dedupeTokens(event: EnterpriseRiskEvent): Set<string> {
+  return dedupeTokenSet(dedupeText(event));
+}
+
+function titleDedupeTokens(event: EnterpriseRiskEvent): Set<string> {
+  return dedupeTokenSet(event.title);
+}
+
+function eventPhraseSet(event: EnterpriseRiskEvent): Set<string> {
+  const text = normalizeDedupeText(dedupeText(event));
+  return new Set(DEDUPE_KEY_PHRASES.filter(phrase => text.includes(phrase)));
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const token of a) {
+    if (b.has(token)) intersection += 1;
+  }
+  return intersection / (a.size + b.size - intersection);
+}
+
+function hasSetOverlap<T>(a: Set<T>, b: Set<T>): boolean {
+  for (const value of a) {
+    if (b.has(value)) return true;
+  }
+  return false;
+}
+
+function eventMarketSet(event: EnterpriseRiskEvent): Set<string> {
+  return new Set([
+    ...event.affectedMarkets,
+    ...inferMarkets(eventBusinessText(event)),
+    ...event.countries,
+  ]);
+}
+
+function eventRouteSet(event: EnterpriseRiskEvent): Set<string> {
+  return new Set(event.impactPath?.routeIds ?? []);
+}
+
+function similarBusinessEvent(a: EnterpriseRiskEvent, b: EnterpriseRiskEvent): boolean {
+  if (exactDedupeKey(a) === exactDedupeKey(b)) return true;
+
+  const aTokens = dedupeTokens(a);
+  const bTokens = dedupeTokens(b);
+  const tokenSimilarity = jaccardSimilarity(aTokens, bTokens);
+  const titleSimilarity = jaccardSimilarity(titleDedupeTokens(a), titleDedupeTokens(b));
+  const sharedPhrases = hasSetOverlap(eventPhraseSet(a), eventPhraseSet(b));
+  const sharedAxes = hasSetOverlap(new Set(liveRiskCoverageAxes(a)), new Set(liveRiskCoverageAxes(b)));
+  const sharedMarkets = hasSetOverlap(eventMarketSet(a), eventMarketSet(b));
+  const sharedRoutes = hasSetOverlap(eventRouteSet(a), eventRouteSet(b));
+
+  if (titleSimilarity >= 0.58) return true;
+  if (titleSimilarity >= 0.42 && (sharedAxes || sharedMarkets || sharedRoutes || sharedPhrases)) return true;
+  if (sharedPhrases && titleSimilarity >= 0.24 && (sharedAxes || sharedMarkets || sharedRoutes)) return true;
+  if (sharedPhrases && tokenSimilarity >= 0.24 && (sharedAxes || sharedMarkets || sharedRoutes)) return true;
+  if (tokenSimilarity >= 0.58) return true;
+  if (tokenSimilarity >= 0.42 && (sharedAxes || sharedMarkets || sharedRoutes)) return true;
+  if (tokenSimilarity >= 0.30 && sharedAxes && (sharedMarkets || sharedRoutes)) return true;
+
+  const aBusinessText = eventBusinessText(a);
+  const bBusinessText = eventBusinessText(b);
+  const sharedHardCompliance = hasKeyword(aBusinessText, HARD_COMPLIANCE_KEYWORDS)
+    && hasKeyword(bBusinessText, HARD_COMPLIANCE_KEYWORDS);
+  const sharedRouteChain = hasKeyword(aBusinessText, ROUTE_CHAIN_KEYWORDS)
+    && hasKeyword(bBusinessText, ROUTE_CHAIN_KEYWORDS);
+  const sharedFxTransmission = hasKeyword(aBusinessText, FX_TRANSMISSION_KEYWORDS)
+    && hasKeyword(bBusinessText, FX_TRANSMISSION_KEYWORDS);
+
+  return tokenSimilarity >= 0.34
+    && (sharedHardCompliance || sharedRouteChain || sharedFxTransmission)
+    && (sharedMarkets || sharedRoutes || sharedAxes);
+}
+
 function dedupeEvents(events: EnterpriseRiskEvent[]): EnterpriseRiskEvent[] {
-  const seen = new Set<string>();
-  return events
-    .sort((a, b) => b.severityScore - a.severityScore || b.occurredAt - a.occurredAt)
-    .filter(event => {
-      const key = normalizeText(event.title).replace(/[^\w\s]/g, '').slice(0, 96);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+  const deduped: EnterpriseRiskEvent[] = [];
+  for (const event of [...events].sort(compareLiveEvents)) {
+    if (deduped.some(existing => similarBusinessEvent(existing, event))) continue;
+    deduped.push(event);
+  }
+  return deduped;
 }
 
 function sortLiveEvents(events: EnterpriseRiskEvent[]): EnterpriseRiskEvent[] {
-  return [...events].sort((a, b) => {
-    const aScenario = isScenarioRelevant(`${a.title} ${a.summary}`) ? 1 : 0;
-    const bScenario = isScenarioRelevant(`${b.title} ${b.summary}`) ? 1 : 0;
-    const aLocated = a.location ? 1 : 0;
-    const bLocated = b.location ? 1 : 0;
-    return bScenario - aScenario
-      || b.severityScore - a.severityScore
-      || scorePriority(b.priority) - scorePriority(a.priority)
-      || bLocated - aLocated
-      || b.occurredAt - a.occurredAt;
-  });
+  return [...events].sort(compareLiveEvents);
+}
+
+function selectLiveEvents(events: EnterpriseRiskEvent[], limit: number): EnterpriseRiskEvent[] {
+  const ranked = sortLiveEvents(events).filter(hasBusinessTransmission);
+  const selected: EnterpriseRiskEvent[] = [];
+  const selectedIds = new Set<string>();
+  const coveredAxes = new Set<EnterpriseRiskTag>();
+
+  const add = (event: EnterpriseRiskEvent) => {
+    if (selectedIds.has(event.id) || selected.length >= limit) return;
+    selected.push(event);
+    selectedIds.add(event.id);
+    for (const axis of liveRiskCoverageAxes(event)) coveredAxes.add(axis);
+  };
+
+  if (ranked[0]) add(ranked[0]);
+
+  if (!selected.some(isSoutheastAsiaBusinessEvent)) {
+    const seaCandidate = ranked.find(event =>
+      !selectedIds.has(event.id)
+      && isSoutheastAsiaBusinessEvent(event),
+    );
+    if (seaCandidate) add(seaCandidate);
+  }
+
+  for (const axis of LIVE_RISK_AXIS_ORDER) {
+    if (selected.length >= limit || coveredAxes.has(axis)) continue;
+    const candidate = ranked.find(event =>
+      !selectedIds.has(event.id)
+      && businessImpactScore(event) >= MIN_AXIS_COVERAGE_SCORE
+      && liveRiskAxisScore(event, axis) >= MIN_AXIS_COVERAGE_SCORE,
+    );
+    if (candidate) add(candidate);
+  }
+
+  for (const event of ranked) {
+    if (selected.length >= limit) break;
+    add(event);
+  }
+
+  return sortLiveEvents(selected);
 }
 
 function resolveBusinessLines(event: EnterpriseRiskEvent): typeof PROFILE.businessLines {
@@ -849,7 +1493,7 @@ function buildImpacts(events: EnterpriseRiskEvent[]): EnterpriseInternalImpact[]
         businessLineName: line.name,
         department: rule.department,
         action: rule.action,
-        impact: `${event.priority} ${tagLabel}风险影响${line.name}`,
+        impact: `${event.priority} ${tagLabel} affects ${line.name}`,
         priority: event.priority,
         score: event.severityScore,
       });
@@ -868,9 +1512,9 @@ function buildAlerts(events: EnterpriseRiskEvent[], impacts: EnterpriseInternalI
       return {
         id: `alert-${event.id}`,
         eventId: event.id,
-        title: event.priority === 'P1' ? '高优先级内部预警' : '业务线风险提醒',
+        title: event.priority === 'P1' ? 'High-priority internal alert' : 'Business-line risk notice',
         priority: event.priority,
-        message: `${event.title} -> ${departments.join(' / ') || 'Risk Office'} 启动响应`,
+        message: `${event.title} -> ${departments.join(' / ') || 'Risk Office'} response started`,
         departments,
         triggeredAt: Date.now(),
         acknowledged: false,
@@ -931,11 +1575,11 @@ function buildReport(
     id: `report-${stableHash(`${lead.id}|${Date.now()}`)}`,
     generatedAt: Date.now(),
     eventSummary: lead.summary,
-    internalImpact: `${lead.priority} 事件已映射到 ${departments.join('、') || '风险办公室'}，影响 ${businessLines.join('、') || '重点业务线'}。`,
-    recommendedActions: recommendations.length ? recommendations : ['保持监控，并在下一轮刷新后复核业务线敞口。'],
+    internalImpact: `${lead.priority} event mapped to ${departments.join(' / ') || 'Risk Office'}, affecting ${businessLines.join(' / ') || 'priority business lines'}.`,
+    recommendedActions: recommendations.length ? recommendations : ['Maintain monitoring and review business-line exposure after the next refresh.'],
     financialImpact: {
       exposureUsd: exposure,
-      estimate: `按受影响业务线收入和事件强度估算，短期收入/成本敞口约 ${formatUsd(exposure)}。`,
+      estimate: `Estimated short-term revenue/cost exposure: ${formatUsd(exposure)}.`, 
       confidence: events.some(event => event.isDemoSeed) ? 'demo_estimate' : 'modeled',
     },
   };
@@ -974,8 +1618,8 @@ function buildAgentImpactsForEvent(
         businessLineId: line.id,
         businessLineName: mapping.businessLineName || line.name,
         department,
-        action: mapping.action || `${department}: 复核该风险事件的业务影响和响应动作`,
-        impact: mapping.impact || `${event.priority} Agent 识别风险影响${line.name}`,
+        action: mapping.action || `${department}: review exposure and response owner for ${event.title}`,
+        impact: mapping.impact || `${event.priority} Agent mapping affects ${line.name}`,
         priority: mapping.priority,
         score: mapping.score,
         source: 'qwen_agent',
@@ -1033,8 +1677,14 @@ function buildConcreteAgentImpactPath(
   event: EnterpriseRiskEvent,
   transmission: EnterpriseRiskAgentTransmission,
 ): EnterpriseRiskEvent['impactPath'] | undefined {
+  const routeIds = transmission.impactPath.routeIds.length
+    ? transmission.impactPath.routeIds
+    : (event.impactPath?.routeIds ?? []);
   if (transmission.impactPath.steps.length && !isGenericAgentImpactPath(transmission.impactPath)) {
-    return transmission.impactPath;
+    return {
+      ...transmission.impactPath,
+      routeIds,
+    };
   }
   const firstMapping = transmission.businessMappings[0];
   if (!firstMapping) return event.impactPath;
@@ -1043,7 +1693,7 @@ function buildConcreteAgentImpactPath(
     ? transmission.impactPath.label
     : line?.routeExposure[0] ?? event.affectedMarkets[0] ?? 'enterprise exposure';
   return {
-    routeIds: transmission.impactPath.routeIds.length ? transmission.impactPath.routeIds : (event.impactPath?.routeIds ?? []),
+    routeIds,
     label: `${event.title} -> ${line?.name ?? (firstMapping.businessLineName || 'affected business line')}`,
     steps: [
       event.title,
@@ -1094,10 +1744,10 @@ function buildCoverage(demoStoryPinned: boolean, liveEventCount: number, inputs:
       detail: `${inputs.supplyChain?.chokepoints?.length ?? 0} chokepoint(s), ${inputs.supplyChain?.shippingIndices?.length ?? 0} freight index item(s)`,
     },
     {
-      id: 'demo-storyline',
-      label: 'Demo storyline',
+      id: 'demo-scenario',
+      label: 'Demo scenario',
       status: demoStoryPinned ? 'demo' : 'missing',
-      detail: `${PROFILE.demoMode.label} 当前追加 ${liveEventCount} 条 live 外部事件。`,
+      detail: `${PROFILE.demoMode.label} currently appended ${liveEventCount} live external event(s).`,
     },
   ];
 }
@@ -1113,6 +1763,29 @@ function collectEvents(inputs: EnterpriseRiskInputs): EnterpriseRiskEvent[] {
 
   const eur = inputs.markets?.find(m => /EUR|EURO/i.test(`${m.symbol} ${m.name}`));
   const cny = inputs.markets?.find(m => /CNY|CNH|YUAN|RMB/i.test(`${m.symbol} ${m.name}`));
+  const seaFxMarkets = [
+    {
+      market: inputs.markets?.find(m => /VND|DONG|VIETNAM/i.test(`${m.symbol} ${m.name}`)),
+      country: 'VN',
+      affectedMarkets: ['Vietnam'],
+      text: 'VND Vietnam dong Ho Chi Minh suppliers export margin receivables',
+      summary: 'Vietnam dong movement can alter supplier payment terms, export margin, and hedge ratios for Ho Chi Minh / Hai Phong-linked shipments.',
+    },
+    {
+      market: inputs.markets?.find(m => /THB|BAHT|THAILAND/i.test(`${m.symbol} ${m.name}`)),
+      country: 'TH',
+      affectedMarkets: ['Thailand'],
+      text: 'THB Thai baht Laem Chabang suppliers export margin receivables',
+      summary: 'Thai baht movement can shift quotation assumptions for Thailand supplier lanes and Laem Chabang logistics exposure.',
+    },
+    {
+      market: inputs.markets?.find(m => /IDR|RUPIAH|INDONESIA/i.test(`${m.symbol} ${m.name}`)),
+      country: 'ID',
+      affectedMarkets: ['Indonesia'],
+      text: 'IDR Indonesian rupiah Indonesia nickel battery material export margin',
+      summary: 'Indonesian rupiah movement can affect nickel-linked input costs and Southeast Asia supplier margin assumptions.',
+    },
+  ];
   if (eur?.change != null && Math.abs(eur.change) > 0.8) {
     const text = `${eur.display || eur.symbol} EUR euro European receivables exposure`;
     const tags: EnterpriseRiskTag[] = ['financial_fx'];
@@ -1158,16 +1831,43 @@ function collectEvents(inputs: EnterpriseRiskInputs): EnterpriseRiskEvent[] {
     });
   }
 
+  for (const item of seaFxMarkets) {
+    const market = item.market;
+    if (market?.change == null || Math.abs(market.change) <= 0.8) continue;
+    const tags: EnterpriseRiskTag[] = ['financial_fx', 'supply_chain'];
+    const score = weightedScore(53 + Math.abs(market.change) * 5, tags);
+    const priority: EnterpriseRiskPriority = 'P2';
+    const location = inferLocation(item.text);
+    const impactPath = buildImpactPath(item.text, item.affectedMarkets);
+    events.push({
+      id: `market-${stableHash(market.symbol)}`,
+      title: `${market.display || market.symbol} changed ${market.change >= 0 ? '+' : ''}${market.change.toFixed(2)}%`,
+      source: 'Markets',
+      sourceType: 'market',
+      summary: item.summary,
+      occurredAt: Date.now(),
+      tags,
+      countries: [item.country],
+      affectedMarkets: item.affectedMarkets,
+      severityScore: score,
+      priority,
+      location,
+      impactPath,
+      explanation: buildExplanation({ text: item.text, tags, priority, score, sourceType: 'market', occurredAt: Date.now(), location, markets: item.affectedMarkets, impactPath }),
+      isDemoSeed: false,
+    });
+  }
+
   return sortLiveEvents(dedupeEvents(events));
 }
 
 export function buildEnterpriseRiskAssessment(inputs: EnterpriseRiskInputs): EnterpriseRiskAssessment {
-  const liveEvents = collectEvents(inputs).slice(0, MAX_LIVE_APPENDIX);
   const demoTitles = new Set(DEMO_EVENTS.map(event => normalizeText(event.title).replace(/[^\w\s]/g, '').slice(0, 96)));
-  const liveAppendix = liveEvents.filter(event => {
+  const liveCandidates = collectEvents(inputs).filter(event => {
     const key = normalizeText(event.title).replace(/[^\w\s]/g, '').slice(0, 96);
     return !demoTitles.has(key);
   });
+  const liveAppendix = selectLiveEvents(liveCandidates, MAX_LIVE_APPENDIX);
   const events = attachCbamEvidence(
     [...DEMO_EVENTS, ...liveAppendix].slice(0, DEMO_EVENTS.length + MAX_LIVE_APPENDIX),
     inputs,
@@ -1207,7 +1907,7 @@ export function buildEnterpriseRiskAssessment(inputs: EnterpriseRiskInputs): Ent
     locationPolicy: 'feed_or_explicit_place_only',
     agentWorkflow: agentStatus(
       'candidate',
-      '规则层已生成候选事件，等待 Qwen 识别 Agent 和传导 Agent 覆盖。',
+      'Rule layer has generated candidate events; waiting for Qwen identification and transmission agents to override.',
       0,
     ),
     reusedCapabilities: [
@@ -1220,9 +1920,9 @@ export function buildEnterpriseRiskAssessment(inputs: EnterpriseRiskInputs): Ent
       'Chat Analyst explanation layer',
     ],
     gaps: [
-      '地图跳转只使用 feed 坐标或显式地名匹配，不做国家/市场级兜底定位。',
-      '财务敞口是基于业务线收入和事件强度的 POC 估算，尚未接入真实 ERP 台账。',
-      '任务状态和告警确认已在浏览器本地持久化，生产级工作流审批尚未接入。',
+      'Map jump uses feed coordinates or explicit place matches only; no country or market-level fallback targeting.',
+      'Financial exposure is a POC estimate based on business-line revenue and event severity; real ERP ledger data is not connected yet.',
+      'Task status and alert acknowledgement are persisted locally in the browser; production workflow approvals are not connected yet.',
     ],
   };
 }
@@ -1232,14 +1932,14 @@ export function markEnterpriseRiskAgentRunning(assessment: EnterpriseRiskAssessm
     ...assessment,
     agentWorkflow: agentStatus(
       'running',
-      'Qwen 识别 Agent 和传导 Agent 正在分析所选 demo/live 卡片。',
+      'Qwen identification and transmission agents are analyzing all demo/live cards.',
       0,
       assessment.agentWorkflow.model,
     ),
   };
 }
 
-export function markEnterpriseRiskAgentFallback(assessment: EnterpriseRiskAssessment, detail = 'Qwen Agent 未返回可用结果，保留规则候选作为兜底。'): EnterpriseRiskAssessment {
+export function markEnterpriseRiskAgentFallback(assessment: EnterpriseRiskAssessment, detail = 'Qwen Agent returned no usable result; keeping rule candidates as fallback.'): EnterpriseRiskAssessment {
   return {
     ...assessment,
     agentWorkflow: agentStatus('fallback', detail, 0, assessment.agentWorkflow.model),
@@ -1337,7 +2037,7 @@ export function applyEnterpriseRiskAgentResult(
     report,
     agentWorkflow: agentStatus(
       'applied',
-      `Qwen Agent 已接管识别层和传导层，覆盖 ${enrichedEventCount} 张卡片。`,
+      `Qwen Agent applied identification and transmission to ${enrichedEventCount} card(s).`,
       enrichedEventCount,
       agentResult.model,
     ),
@@ -1347,8 +2047,8 @@ export function applyEnterpriseRiskAgentResult(
       ...assessment.reusedCapabilities.filter(item => !item.includes('Chat Analyst')),
     ],
     gaps: [
-      'Qwen Agent 是识别层和传导层主输出；规则层仅作为候选生成和失败兜底。',
-      ...assessment.gaps.filter(gap => !gap.includes('任务状态和告警确认')),
+      'Qwen Agent is the primary output for identification and transmission; rule layer is only candidate generation and failure fallback.',
+      ...assessment.gaps.filter(gap => !gap.includes('rule layer')),
     ],
   };
 }

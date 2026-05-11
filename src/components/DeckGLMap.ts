@@ -5018,11 +5018,6 @@ export class DeckGLMap {
       </div>
     `;
 
-    const authorBadge = document.createElement('div');
-    authorBadge.className = 'map-author-badge';
-    authorBadge.textContent = '© Elie Habib · Someone™';
-    toggles.appendChild(authorBadge);
-
     this.container.appendChild(toggles);
     const initialSearchEl = toggles.querySelector('.layer-search') as HTMLElement | null;
     if (initialSearchEl) initialSearchEl.style.display = 'none';

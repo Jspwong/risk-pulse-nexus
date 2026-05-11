@@ -569,8 +569,25 @@ export class App {
             } catch { /* corrupt storage, skip */ }
           }
         }
-        if (migrated) saveToStorage(STORAGE_KEYS.panels, panelSettings);
-        localStorage.setItem(PANEL_KEY_RENAMES_MIGRATION_KEY, 'done');
+      if (migrated) saveToStorage(STORAGE_KEYS.panels, panelSettings);
+      localStorage.setItem(PANEL_KEY_RENAMES_MIGRATION_KEY, 'done');
+      }
+
+      const ENTERPRISE_RISK_EVENTS_MIGRATION_KEY = 'worldmonitor-enterprise-risk-events-panel-v1';
+      if (
+        SITE_VARIANT === 'full' &&
+        !localStorage.getItem(ENTERPRISE_RISK_EVENTS_MIGRATION_KEY) &&
+        panelSettings['enterprise-risk']?.enabled !== false
+      ) {
+        panelSettings['enterprise-risk-events'] = {
+          ...DEFAULT_PANELS['enterprise-risk-events'],
+          ...panelSettings['enterprise-risk-events'],
+          name: DEFAULT_PANELS['enterprise-risk-events']?.name ?? 'Event List',
+          enabled: true,
+          priority: panelSettings['enterprise-risk-events']?.priority ?? 1,
+        };
+        saveToStorage(STORAGE_KEYS.panels, panelSettings);
+        localStorage.setItem(ENTERPRISE_RISK_EVENTS_MIGRATION_KEY, 'done');
       }
 
       // Merge in any panels from ALL_PANELS that didn't exist when settings were saved

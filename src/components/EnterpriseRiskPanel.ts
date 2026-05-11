@@ -5,28 +5,15 @@ import type {
   EnterpriseReportSummary,
   EnterpriseRiskAssessment,
   EnterpriseRiskEvent,
-  EnterpriseRiskPriority,
   EnterpriseTask,
   EnterpriseTaskStatus,
 } from '@/types/enterprise-risk';
 import { enterpriseRiskTagLabel } from '@/services/enterprise-risk';
 import { escapeHtml, sanitizeUrl } from '@/utils/sanitize';
-
-function priorityClass(priority: EnterpriseRiskPriority): string {
-  return priority.toLowerCase();
-}
-
-function priorityLabel(priority: EnterpriseRiskPriority): string {
-  return priority === 'P1' ? 'P1 Immediate' : priority === 'P2' ? 'P2 Watch' : 'P3 Monitor';
-}
-
-function relativeAge(ts: number): string {
-  const diff = Math.max(0, Date.now() - ts);
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.floor(minutes / 60)}h ago`;
-}
+import {
+  enterpriseRiskPriorityClass,
+  hasReliableEnterpriseRiskMapTarget,
+} from './enterprise-risk-rendering';
 
 function formatUsd(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
@@ -76,6 +63,10 @@ export class EnterpriseRiskPanel extends Panel {
     this.render();
   }
 
+  public selectEventById(eventId: string | null): void {
+    this.selectEvent(eventId);
+  }
+
   private render(): void {
     if (!this.assessment) {
       this.showLoading('Waiting for enterprise risk assessment...');
@@ -88,9 +79,6 @@ export class EnterpriseRiskPanel extends Panel {
     const visibleAlerts = this.getVisibleAlerts();
     const visibleTasks = this.getVisibleTasks();
     const selectedReport = this.buildSelectedReport(assessment.report, selectedEvent, visibleImpacts, visibleTasks);
-    const pinnedEvents = assessment.events.filter(event => event.isDemoSeed);
-    const liveEvents = assessment.events.filter(event => !event.isDemoSeed);
-    const rssCoverage = assessment.sourceCoverage.find(source => source.id === 'rss');
     const p1Count = assessment.alerts.filter(alert => alert.priority === 'P1').length;
     const activeTaskCount = assessment.tasks.filter(task => this.getTaskStatus(task) !== 'done').length;
     const liveSources = assessment.sourceCoverage.filter(source => source.status === 'live').length;
@@ -99,7 +87,7 @@ export class EnterpriseRiskPanel extends Panel {
       <div class="enterprise-risk-v2">
         <div class="er-hero">
           <div class="er-hero-main">
-            <div class="er-kicker">Clickable closed loop · ${escapeHtml(assessment.profile.scenarioName)}</div>
+            <div class="er-kicker">Clickable closed loop - ${escapeHtml(assessment.profile.scenarioName)}</div>
             <h3>${escapeHtml(assessment.profile.companyName)}</h3>
             <p>${escapeHtml(assessment.profile.primaryNarrative)}</p>
           </div>
@@ -112,36 +100,11 @@ export class EnterpriseRiskPanel extends Panel {
         </div>
 
         <div class="er-demo-banner">
-          Demo 主线固定保留；Live 外部事件最多追加 5 条。识别层和传导层由 Qwen Agent 接管，规则层仅作为候选和失败兜底。
+          Demo scenario stays pinned; live external events append up to 4 cards. Qwen Agent owns identification and transmission; rules only generate candidates and failure fallback.
           <span class="er-agent-status er-agent-${escapeHtml(assessment.agentWorkflow.status)}">${escapeHtml(assessment.agentWorkflow.detail)}</span>
         </div>
 
         ${selectedEvent ? this.renderSelectedFlow(selectedEvent, visibleImpacts, visibleAlerts, visibleTasks, selectedReport) : ''}
-
-        <div class="er-report" id="enterpriseRiskReport">
-          <div class="er-section-title">Auto Report Summary</div>
-          ${selectedEvent ? `<div class="er-selected-context">Selected trigger: <strong>${escapeHtml(selectedEvent.title)}</strong></div>` : ''}
-          <div class="er-report-grid">
-            <div><strong>Event summary</strong><p>${escapeHtml(selectedReport.eventSummary)}</p></div>
-            <div><strong>Internal impact</strong><p>${escapeHtml(selectedReport.internalImpact)}</p></div>
-            <div><strong>Recommended actions</strong><ul>${selectedReport.recommendedActions.map(action => `<li>${escapeHtml(action)}</li>`).join('')}</ul></div>
-            <div><strong>Financial impact</strong><p>${escapeHtml(selectedReport.financialImpact.estimate)} <span class="er-confidence">${escapeHtml(selectedReport.financialImpact.confidence)}</span></p></div>
-          </div>
-        </div>
-
-        <section class="er-section er-section-events er-events-full">
-          <div class="er-event-list-head">
-            <div>
-              <div class="er-section-title">Event List</div>
-              <div class="er-event-list-subtitle">Pinned demo storyline + live external context</div>
-            </div>
-            <span>${assessment.events.length} cards</span>
-          </div>
-          <div class="er-event-list-grid">
-            ${pinnedEvents.map(event => this.renderEvent(event)).join('')}
-            ${liveEvents.length ? liveEvents.map(event => this.renderEvent(event)).join('') : `<div class="er-empty">No live risk candidates yet. ${escapeHtml(rssCoverage?.detail ?? 'External feeds are still loading.')}</div>`}
-          </div>
-        </section>
 
         <div class="er-footer">
           <div class="er-source-strip">
@@ -198,7 +161,7 @@ export class EnterpriseRiskPanel extends Panel {
       return;
     }
     if (action === 'focus-tasks') {
-      this.content.querySelector('.er-events-full')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      this.element.dispatchEvent(new CustomEvent('wm:enterprise-risk-open-events', { bubbles: true }));
       return;
     }
     if (action === 'select-p1') {
@@ -231,7 +194,7 @@ export class EnterpriseRiskPanel extends Panel {
       detail: {
         eventId: selected.id,
         title: selected.title,
-        location: selected.location,
+        location: hasReliableEnterpriseRiskMapTarget(selected) ? selected.location : undefined,
         impactPath: selected.impactPath,
       },
     }));
@@ -291,11 +254,11 @@ export class EnterpriseRiskPanel extends Panel {
       ...baseReport,
       id: `report-${selectedEvent.id}`,
       eventSummary: selectedEvent.summary,
-      internalImpact: `${selectedEvent.priority} 事件映射到 ${departments.join('、') || '风险办公室'}，影响 ${businessLines.join('、') || '重点业务线'}。`,
-      recommendedActions: recommendations.length ? recommendations : ['继续监控该事件，并在下一次数据刷新后复核内部敞口。'],
+      internalImpact: `${selectedEvent.priority} event mapped to ${departments.join(' / ') || 'Risk Office'}, affecting ${businessLines.join(' / ') || 'priority business lines'}.`,
+      recommendedActions: recommendations.length ? recommendations : ['Continue monitoring this event and review internal exposure after the next data refresh.'],
       financialImpact: {
         exposureUsd: exposure,
-        estimate: `按所选事件强度、部门覆盖和业务线敞口估算，短期影响约 ${formatUsd(exposure)}。`,
+        estimate: `Estimated selected-event impact is approximately ${formatUsd(exposure)} based on severity, department coverage, and business-line exposure.`,
         confidence: selectedEvent.isDemoSeed ? 'demo_estimate' : 'modeled',
       },
     };
@@ -349,7 +312,7 @@ export class EnterpriseRiskPanel extends Panel {
     report: EnterpriseReportSummary,
   ): string {
     const agentLine = event.agent?.identificationSource === 'qwen_agent'
-      ? `Qwen output${event.agent.model ? ` · ${event.agent.model}` : ''}${event.agent.confidence != null ? ` · confidence ${(event.agent.confidence * 100).toFixed(0)}%` : ''}`
+      ? `Qwen output${event.agent.model ? ` - ${event.agent.model}` : ''}${event.agent.confidence != null ? ` - confidence ${(event.agent.confidence * 100).toFixed(0)}%` : ''}`
       : 'Rule fallback waiting for Qwen output';
     const transmissionLine = event.agent?.transmissionSource === 'qwen_agent'
       ? `Qwen transmission mapped ${impacts.length} internal item(s)`
@@ -365,7 +328,7 @@ export class EnterpriseRiskPanel extends Panel {
       }).join('')
       : '<li><strong>No external source link</strong><span>Structured internal signal or demo seed.</span></li>';
     const routeHtml = event.impactPath?.steps.length
-      ? `<div class="er-transmission-route">${event.impactPath.steps.map(step => `<span>${escapeHtml(step)}</span>`).join('<b>→</b>')}</div>`
+      ? `<div class="er-transmission-route">${event.impactPath.steps.map(step => `<span>${escapeHtml(step)}</span>`).join('<b>-></b>')}</div>`
       : '<p>No route path mapped yet.</p>';
     const impactHtml = impacts.length
       ? impacts.slice(0, 6).map(impact => `
@@ -382,27 +345,27 @@ export class EnterpriseRiskPanel extends Panel {
         <div class="er-flow-grid">
           <div class="er-flow-card">
             <span class="er-flow-index">1</span>
-            <strong>感知层 · Sensing</strong>
+            <strong>Perception Layer</strong>
             <p>${escapeHtml(event.title)}</p>
             <ul class="er-evidence-list">${evidenceHtml}</ul>
           </div>
           <div class="er-flow-card">
             <span class="er-flow-index">2</span>
-            <strong>识别层 · Qwen Identification Agent</strong>
+            <strong>Identification Layer - Qwen Identification Agent</strong>
             <p class="er-agent-output">${escapeHtml(agentLine)}</p>
-            <p>${escapeHtml(event.tags.map(enterpriseRiskTagLabel).join(' / '))} · ${escapeHtml(event.priority)} · score ${event.severityScore}</p>
+            <p>${escapeHtml(event.tags.map(enterpriseRiskTagLabel).join(' / '))} - ${escapeHtml(event.priority)} - score ${event.severityScore}</p>
             <ul>${event.explanation.triggerBasis.slice(0, 4).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
           </div>
           <div class="er-flow-card">
             <span class="er-flow-index">3</span>
-            <strong>传导层 · Qwen Transmission Agent</strong>
+            <strong>Transmission Layer - Qwen Transmission Agent</strong>
             <p class="er-agent-output">${escapeHtml(transmissionLine)}</p>
             ${routeHtml}
             <ul class="er-transmission-list">${impactHtml}</ul>
           </div>
           <div class="er-flow-card">
             <span class="er-flow-index">4</span>
-            <strong>响应层 · Response</strong>
+            <strong>Response Layer</strong>
             <p>${escapeHtml(alerts.length ? alerts[0]!.message : report.financialImpact.estimate)}</p>
             <ul>${tasks.slice(0, 4).map(task => `<li>${escapeHtml(task.department)}: ${escapeHtml(task.title)}</li>`).join('') || '<li>Monitor and refresh assessment.</li>'}</ul>
           </div>
@@ -411,58 +374,12 @@ export class EnterpriseRiskPanel extends Panel {
     `;
   }
 
-  private renderEvent(event: EnterpriseRiskEvent): string {
-    const tags = event.tags.map(tag => `<span>${escapeHtml(enterpriseRiskTagLabel(tag))}</span>`).join('');
-    const link = event.link ? sanitizeUrl(event.link) : '';
-    const isSelected = event.id === this.getSelectedEvent()?.id;
-    const sourceLink = link ? ` <a class="er-source-link" href="${link}" target="_blank" rel="noopener noreferrer" title="Open original source">Open source</a>` : '';
-    const mapHint = event.location ? `<div class="er-map-hint">Map target: ${escapeHtml(event.location.label)}</div>` : '';
-    const agentBadge = event.agent?.identificationSource === 'qwen_agent'
-      ? `<span class="er-agent-badge">Qwen refined${event.agent.confidence != null ? ` · ${(event.agent.confidence * 100).toFixed(0)}%` : ''}</span>`
-      : '<span class="er-agent-badge er-agent-fallback">rule fallback</span>';
-    return `
-      <article class="er-event er-card-priority-${priorityClass(event.priority)}${isSelected ? ' er-selected' : ''}" data-er-event-id="${escapeHtml(event.id)}" role="button" tabindex="0">
-        <div class="er-row-top">
-          <span class="er-priority ${priorityClass(event.priority)}">${priorityLabel(event.priority)}</span>
-          <span class="er-age">${isSelected ? 'selected' : escapeHtml(relativeAge(event.occurredAt))}</span>
-        </div>
-        ${agentBadge}
-        <div class="er-event-title">${escapeHtml(event.title)}</div>
-        <div class="er-event-summary">${escapeHtml(event.summary)}</div>
-        <div class="er-tags">${tags}</div>
-        ${mapHint}
-        ${this.renderWhy(event)}
-        <div class="er-source-line">${escapeHtml(event.source)} · ${escapeHtml(event.sourceType.replace(/_/g, ' '))}${event.isDemoSeed ? ' · demo seed' : ''}${sourceLink}</div>
-      </article>
-    `;
-  }
-
-  private renderWhy(event: EnterpriseRiskEvent): string {
-    const rows: Array<[string, string[]]> = [
-      ['Trigger', event.explanation.triggerBasis],
-      ['Priority', event.explanation.priorityBasis],
-      ['Mapping', event.explanation.mappingBasis],
-      ['Data', event.explanation.dataQuality],
-    ];
-    return `
-      <details class="er-why">
-        <summary>Why this alert</summary>
-        ${rows.map(([label, items]) => `
-          <div class="er-why-row">
-            <strong>${escapeHtml(label)}</strong>
-            <ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
-          </div>
-        `).join('')}
-      </details>
-    `;
-  }
-
   private renderAlert(alert: EnterpriseAlert): string {
     const acknowledged = this.acknowledgedAlertIds.has(alert.id);
     return `
-      <div class="er-alert er-card-priority-${priorityClass(alert.priority)}${acknowledged ? ' er-acknowledged' : ''}">
+      <div class="er-alert er-card-priority-${enterpriseRiskPriorityClass(alert.priority)}${acknowledged ? ' er-acknowledged' : ''}">
         <div class="er-row-top">
-          <span class="er-priority ${priorityClass(alert.priority)}">${escapeHtml(alert.priority)}</span>
+          <span class="er-priority ${enterpriseRiskPriorityClass(alert.priority)}">${escapeHtml(alert.priority)}</span>
           <button class="er-mini-action" type="button" data-er-alert-id="${escapeHtml(alert.id)}">${acknowledged ? 'Undo ack' : 'Acknowledge'}</button>
         </div>
         <strong>${escapeHtml(alert.title)}</strong>
@@ -479,9 +396,9 @@ export class EnterpriseRiskPanel extends Panel {
         <button class="er-task-status er-task-status-btn" type="button" data-er-task-id="${escapeHtml(task.id)}">${escapeHtml(status.replace(/_/g, ' '))}</button>
         <div>
           <strong>${escapeHtml(task.title)}</strong>
-          <p>${escapeHtml(task.department)} · due ${escapeHtml(task.dueDate)}</p>
+          <p>${escapeHtml(task.department)} - due ${escapeHtml(task.dueDate)}</p>
         </div>
-        <span class="er-priority ${priorityClass(task.priority)}">${escapeHtml(task.priority)}</span>
+        <span class="er-priority ${enterpriseRiskPriorityClass(task.priority)}">${escapeHtml(task.priority)}</span>
       </div>
     `;
   }
