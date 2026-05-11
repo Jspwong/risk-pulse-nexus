@@ -5,9 +5,22 @@ export const config = { runtime: 'edge' };
 const DEFAULT_QWEN_BASE_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_QWEN_MODEL = 'qwen-plus';
 const ALLOWED_TAGS = ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'];
+const MAX_RISK_TAGS = 3;
 const ALLOWED_PRIORITIES = ['P1', 'P2', 'P3'];
-const AGENT_PROMPT_VERSION = 'v7-department-coverage';
+const ALLOWED_ROI_TEMPLATES = ['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'];
+const ALLOWED_ROI_UNITS = ['usd', 'probability', 'percentage', 'days', 'count', 'tonnes_co2e', 'usd_per_day', 'multiple'];
+const ALLOWED_ROI_KEYS = ['exposureBaseUsd', 'eventProbability', 'lossGivenEventPct', 'detectionHitRate', 'mitigationEffectiveness', 'annualSystemCostUsd'];
+const ROI_KEY_UNITS = {
+  exposureBaseUsd: 'usd',
+  eventProbability: 'probability',
+  lossGivenEventPct: 'percentage',
+  detectionHitRate: 'probability',
+  mitigationEffectiveness: 'percentage',
+  annualSystemCostUsd: 'usd',
+};
+const AGENT_PROMPT_VERSION = 'v8-max-3-risk-tags';
 const AGENT_CACHE_TTL_MS = 30 * 60 * 1000;
+const QWEN_TIMEOUT_MS = 45_000;
 const agentCache = new Map();
 
 function json(req, status, body) {
@@ -272,7 +285,7 @@ function systemPromptV2(mode) {
   const common = [
     'You are WorldMonitor Enterprise Risk Agent. Return ONLY compact JSON.',
     'Analyze independently from event text/source/evidence/profile; do not copy rule candidates.',
-    'riskTags is multi-label: include every materially applicable tag, usually 1-3, max 4. Do not output only the primary tag when secondary transmission is real.',
+    'riskTags is multi-label: include every materially applicable tag, usually 1-3, max 3. Do not output only the primary tag when secondary transmission is real.',
     'Tags only: geopolitical, regulatory, supply_chain, financial_fx. Priority only: P1,P2,P3.',
     'Tag guide: geopolitical=conflict/sanctions/chokepoint security/export controls; regulatory=CBAM/customs/tariff/reporting/certification; supply_chain=port/shipping/freight/supplier/material/production delay; financial_fx=FX/rates/inflation/commodity/freight cost/margin/receivables/hedging.',
     'Departments only: Compliance, Finance, Supply Chain, Sales, Operations.',
@@ -310,7 +323,7 @@ function systemPromptV3(mode) {
   const common = [
     'You are WorldMonitor Enterprise Risk Agent. Return ONLY valid compact JSON.',
     'Analyze independently from event text, source, evidence, and profile. Never copy rule candidates.',
-    'riskTags is multi-label: include all material tags, usually 1-3, max 4.',
+    'riskTags is multi-label: include all material tags, usually 1-3, max 3.',
     'Tags only: geopolitical, regulatory, supply_chain, financial_fx. Priority only: P1,P2,P3.',
     'Tag guide: geopolitical=conflict sanctions chokepoint-security export-controls; regulatory=CBAM customs tariff reporting certification; supply_chain=port shipping freight supplier material production delay; financial_fx=FX rates inflation commodity freight-cost margin receivable hedge.',
     'Departments only: Compliance, Finance, Supply Chain, Sales, Operations.',
@@ -339,6 +352,20 @@ Schema: {"riskTags":["regulatory","supply_chain"],"priority":"P2","severityScore
     return `${common}
 Task: map this event into internal impact.
 Schema: {${transmission}}`;
+  }
+  if (mode === 'roi_assumptions') {
+    return `${common}
+Task: act only as the ROI assumption agent. Do not calculate ROI, expected savings, net savings, or final financial output.
+Use Open FAIR as the risk quantification frame and NIST SP 800-30 for likelihood/control-effect assumptions.
+Pick exactly one template, matching the top-level risk axis: regulatory, supply_chain, financial_fx, geopolitical.
+If input.constraints.targetTemplate is provided, use that exact template and analyze only that risk axis.
+Return bounded assumptions only. Values for probability and percentage must be decimals from 0 to 1.
+Required assumption keys: exposureBaseUsd, eventProbability, lossGivenEventPct, detectionHitRate, mitigationEffectiveness, annualSystemCostUsd.
+Use line-level confidence by evidence quality; do not copy the same confidence to every assumption unless evidence quality is truly identical.
+Return all required assumptions for the requested targetTemplate in this call. Do not omit an axis-specific pack when targetTemplate is provided.
+Preserve the input event.id exactly as eventId.
+Use only provided event/profile/evidence facts; weak evidence lowers confidence.
+Schema: {"eventId":"demo-cbam-red-sea-001","template":"regulatory","version":"fair-lite-v1-qwen-assisted","confidence":0.72,"assumptions":[{"key":"exposureBaseUsd","label":"Exposure magnitude","value":2600000,"low":1600000,"high":3600000,"unit":"usd","source":"provided profile/evidence","sourceUrl":"","confidence":0.72,"locked":false}],"rationale":["why assumptions fit"],"references":["Open FAIR","NIST SP 800-30"]}`;
   }
   return `${common}
 Task: identify and map this event.
@@ -378,7 +405,7 @@ function normalizeIdentification(value) {
     : [];
   const priority = ALLOWED_PRIORITIES.includes(value?.priority) ? value.priority : 'P3';
   return {
-    riskTags: tags.length ? Array.from(new Set(tags)) : ['supply_chain'],
+    riskTags: tags.length ? Array.from(new Set(tags)).slice(0, MAX_RISK_TAGS) : ['supply_chain'],
     priority,
     severityScore: Math.round(clampNumber(value?.severityScore, 0, 100, priority === 'P1' ? 82 : priority === 'P2' ? 58 : 35)),
     confidence: clampNumber(value?.confidence, 0, 1, 0.45),
@@ -418,9 +445,51 @@ function normalizeTransmission(value) {
   };
 }
 
+function normalizeRoiAssumptionLine(value) {
+  const key = typeof value?.key === 'string' ? value.key : '';
+  const unit = ROI_KEY_UNITS[key] || (ALLOWED_ROI_UNITS.includes(value?.unit) ? value.unit : 'usd');
+  const n = clampNumber(value?.value, 0, unit === 'usd' || unit === 'usd_per_day' ? 100_000_000 : 1_000_000, 0);
+  const max = unit === 'probability' || unit === 'percentage' ? 1 : unit === 'usd' || unit === 'usd_per_day' ? 100_000_000 : 1_000_000;
+  const normalizedValue = unit === 'probability' || unit === 'percentage'
+    ? clampNumber(n > 1 ? n / 100 : n, 0, 1, 0)
+    : clampNumber(n, 0, max, 0);
+  return {
+    key,
+    label: typeof value?.label === 'string' ? value.label.slice(0, 80) : key,
+    value: normalizedValue,
+    low: value?.low == null ? undefined : clampNumber((unit === 'probability' || unit === 'percentage') && value.low > 1 ? value.low / 100 : value.low, 0, max, undefined),
+    high: value?.high == null ? undefined : clampNumber((unit === 'probability' || unit === 'percentage') && value.high > 1 ? value.high / 100 : value.high, 0, max, undefined),
+    unit,
+    source: typeof value?.source === 'string' ? value.source.slice(0, 180) : 'Qwen assumption agent',
+    sourceUrl: typeof value?.sourceUrl === 'string' ? value.sourceUrl.slice(0, 260) : undefined,
+    confidence: clampNumber(value?.confidence, 0, 1, 0.45),
+    locked: Boolean(value?.locked),
+  };
+}
+
+function normalizeRoiAssumptions(value) {
+  const template = ALLOWED_ROI_TEMPLATES.includes(value?.template) ? value.template : 'regulatory';
+  const assumptions = Array.isArray(value?.assumptions)
+    ? value.assumptions
+      .map(normalizeRoiAssumptionLine)
+      .filter(item => ALLOWED_ROI_KEYS.includes(item.key))
+      .slice(0, 8)
+    : [];
+  return {
+    eventId: typeof value?.eventId === 'string' ? value.eventId.slice(0, 180) : '',
+    template,
+    version: typeof value?.version === 'string' ? value.version.slice(0, 80) : 'fair-lite-v1-qwen-assisted',
+    confidence: clampNumber(value?.confidence, 0, 1, 0.45),
+    assumptions,
+    rationale: list(value?.rationale, 4),
+    references: list(value?.references, 6),
+  };
+}
+
 function normalizeResult(mode, raw) {
   if (mode === 'identify') return normalizeIdentification(raw);
   if (mode === 'transmit') return normalizeTransmission(raw);
+  if (mode === 'roi_assumptions') return normalizeRoiAssumptions(raw);
   if (mode === 'batch_closed_loop') {
     const events = Array.isArray(raw?.events) ? raw.events : [];
     return {
@@ -438,7 +507,7 @@ function normalizeResult(mode, raw) {
 }
 
 async function callQwen(payload, cfg) {
-  const mode = ['identify', 'transmit', 'closed_loop', 'batch_closed_loop'].includes(payload.mode) ? payload.mode : 'closed_loop';
+  const mode = ['identify', 'transmit', 'closed_loop', 'batch_closed_loop', 'roi_assumptions'].includes(payload.mode) ? payload.mode : 'closed_loop';
   const cacheKey = await cacheKeyFor({ ...payload, mode }, cfg);
   const cached = getCachedAgentResult(cacheKey);
   if (cached) return cached;
@@ -449,14 +518,14 @@ async function callQwen(payload, cfg) {
       { role: 'user', content: userPrompt({ ...payload, mode }) },
     ],
     temperature: 0.05,
-    max_tokens: mode === 'batch_closed_loop' ? 4200 : 1400,
+    max_tokens: mode === 'batch_closed_loop' ? 4200 : mode === 'roi_assumptions' ? 3200 : 1400,
   };
 
   if (process.env.QWEN_ENABLE_THINKING !== '1') body.enable_thinking = false;
   if (process.env.QWEN_JSON_MODE !== '0') body.response_format = { type: 'json_object' };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
+  const timeout = setTimeout(() => controller.abort(), QWEN_TIMEOUT_MS);
   try {
     let response = await fetch(cfg.endpoint, {
       method: 'POST',
@@ -522,7 +591,7 @@ export default async function handler(req) {
       provider: 'qwen',
       model: cfg.model,
       baseUrl: cfg.baseUrl,
-      modes: ['identify', 'transmit', 'closed_loop', 'batch_closed_loop'],
+      modes: ['identify', 'transmit', 'closed_loop', 'batch_closed_loop', 'roi_assumptions'],
     });
   }
 

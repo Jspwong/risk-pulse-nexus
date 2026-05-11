@@ -64,6 +64,35 @@ describe('enterprise risk demo contract', () => {
     assert.doesNotMatch(src, /Internal Mapping - Selected Trigger/);
   });
 
+  it('models selected-event financial exposure only for triggered ROI axes without Qwen dependency', () => {
+    const types = read('src/types/enterprise-risk.ts');
+    const service = read('src/services/enterprise-risk.ts');
+    const panel = read('src/components/EnterpriseRiskPanel.ts');
+
+    assert.match(types, /export interface EnterpriseRoiScenario/);
+    assert.match(types, /export interface EnterpriseRoiSimulation/);
+    assert.match(types, /expectedSavingUsd: number/);
+    assert.match(types, /mitigationCostUsd: number/);
+    assert.match(types, /compositeRoiPct: number/);
+
+    assert.match(service, /ENTERPRISE_ROI_RISK_ORDER:\s*EnterpriseRiskTag\[\]\s*=\s*\['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'\]/);
+    assert.match(service, /buildEnterpriseRoiSimulation/);
+    assert.match(service, /const triggeredTags = ENTERPRISE_ROI_RISK_ORDER\.filter\(tag => event\.tags\.includes\(tag\)\)/);
+    assert.match(service, /mitigationCostUsd > 0 \? Math\.round\(\(netSavingUsd \/ mitigationCostUsd\) \* 100\) : 0/);
+    assert.doesNotMatch(service.match(/function buildEnterpriseRoiScenario[\s\S]*?\n\}/)?.[0] ?? '', /qwen_agent|DASHSCOPE/);
+    assert.doesNotMatch(service, /secondary stress scenario/);
+
+    assert.match(panel, /Triggered Risk ROI Simulation Sandbox/);
+    assert.match(panel, /Expected savings/);
+    assert.match(panel, /Composite ROI/);
+    assert.match(panel, /er-roi-kpi-negative-highlight/);
+    assert.match(panel, /data-er-action="roi-mode"/);
+    assert.match(panel, /data-er-action="roi-toggle-tag"/);
+    assert.match(panel, /buildEnterpriseRoiSimulation\(selectedEvent, impacts, tasks, this\.getRoiAssumptions\(\)\)/);
+    assert.doesNotMatch(panel, /latent/);
+    assert.doesNotMatch(panel, /triggered/);
+  });
+
   it('provides a server-side Qwen entry point for identification and transmission agents', () => {
     const api = read('api/enterprise-risk-agent.js');
     const plan = read('docs/enterprise-risk-agent-plan.md');
@@ -77,6 +106,11 @@ describe('enterprise risk demo contract', () => {
     assert.match(api, /closed_loop/);
     assert.match(api, /batch_closed_loop/);
     assert.match(api, /geopolitical', 'regulatory', 'supply_chain', 'financial_fx/);
+    assert.match(api, /const MAX_RISK_TAGS = 3/);
+    assert.match(api, /max 3/);
+    assert.match(api, /slice\(0, MAX_RISK_TAGS\)/);
+    assert.match(api, /const QWEN_TIMEOUT_MS = 45_000/);
+    assert.match(api, /mode === 'roi_assumptions' \? 3200/);
     assert.doesNotMatch(api, /VITE_(?:QWEN|DASHSCOPE)/);
 
     assert.match(plan, /ENTERPRISE_RISK_AGENT_ENABLED=1/);
@@ -99,6 +133,14 @@ describe('enterprise risk demo contract', () => {
     assert.match(loader, /fetchEnterpriseRiskAgentBatch/);
     assert.match(loader, /markEnterpriseRiskAgentRunning/);
     assert.match(loader, /markEnterpriseRiskAgentFallback/);
+    assert.match(loader, /events\.filter\(event => enterpriseRiskRoiTagsForEvent\(event\)\.length > 0\)/);
+    assert.doesNotMatch(loader, /return events\.slice\(0,\s*4\)/);
+    assert.match(loader, /selectEnterpriseRiskRoiAssumptionTargets/);
+    assert.match(loader, /ENTERPRISE_RISK_ROI_REQUEST_CONCURRENCY = 3/);
+    assert.match(loader, /ENTERPRISE_RISK_ROI_REQUEST_RETRIES = 1/);
+    assert.match(client, /maxRiskTagsPerEvent:\s*3/);
+    assert.match(client, /timeoutMs = options\.timeoutMs \?\? 24_000/);
+    assert.match(client, /requireOnePackForEveryRequestedTag:\s*true/);
     assert.match(panel, /Qwen Identification Agent/);
     assert.match(panel, /Qwen Transmission Agent/);
     assert.match(client, /mode:\s*'batch_closed_loop'/);
@@ -138,11 +180,13 @@ describe('enterprise risk demo contract', () => {
     assert.match(service, /denaturaliz/);
     assert.match(service, /terrorist support/);
     assert.match(service, /enterpriseSignalStrength/);
-    assert.match(service, /enterpriseSignalStrength\(text\) < 4/);
-    assert.match(service, /hasLowEnterpriseSignal\(text\) && enterpriseSignalStrength\(text\) < 6/);
+    assert.match(service, /signalStrength < 3 && transmissionScore < MIN_BUSINESS_TRANSMISSION_SCORE \+ 10/);
+    assert.match(service, /hasLowEnterpriseSignal\(text\) && signalStrength < 6/);
+    assert.match(service, /clusterContextText/);
     assert.match(service, /score >= 86 && directShock && routeOrCompliance/);
     assert.match(service, /Math\.min\(scenarioRelevant \? 84 : 62/);
-    assert.match(service, /const routeIds = transmission\.impactPath\.routeIds\.length\s+\? transmission\.impactPath\.routeIds\s+:\s+\(event\.impactPath\?\.routeIds \?\? \[\]\)/);
+    assert.match(service, /const eventRouteIds = event\.impactPath\?\.routeIds \?\? \[\]/);
+    assert.match(service, /const routeIds = eventRouteIds\.length \? eventRouteIds : transmission\.impactPath\.routeIds/);
 
     assert.match(loader, /ENTERPRISE_RISK_FAST_NEWS_CATEGORIES/);
     assert.match(loader, /shouldUsePerFeedFallbackForCategory/);
@@ -169,7 +213,8 @@ describe('enterprise risk demo contract', () => {
     assert.match(service, /PRODUCT_COMPONENT_KEYWORDS/);
     assert.match(service, /HARD_COMPLIANCE_KEYWORDS/);
     assert.match(service, /FX_TRANSMISSION_KEYWORDS/);
-    assert.match(service, /businessTransmissionScore\(text\) < MIN_BUSINESS_TRANSMISSION_SCORE/);
+    assert.match(service, /transmissionScore >= MIN_BUSINESS_TRANSMISSION_SCORE/);
+    assert.match(service, /MIN_SEA_IMPACT_SCORE/);
     assert.match(service, /filter\(hasBusinessTransmission\)/);
     assert.match(service, /selectLiveEvents/);
     assert.match(service, /LIVE_RISK_AXIS_ORDER:\s*EnterpriseRiskTag\[\]\s*=\s*\['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'\]/);
@@ -210,5 +255,7 @@ describe('enterprise risk demo contract', () => {
     assert.match(loader, /'southeast-asia'/);
     assert.match(service, /isSoutheastAsiaBusinessEvent/);
     assert.match(service, /MIN_SEA_COVERAGE_SCORE/);
+    assert.match(service, /MAX_SEA_LIVE_EVENTS = 1/);
+    assert.match(service, /selectedSeaCount >= MAX_SEA_LIVE_EVENTS/);
   });
 });

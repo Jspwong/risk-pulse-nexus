@@ -3,12 +3,21 @@ import type {
   EnterpriseAlert,
   EnterpriseInternalImpact,
   EnterpriseReportSummary,
+  EnterpriseRoiAssumptionLine,
+  EnterpriseRoiAssumptionPack,
+  EnterpriseRoiAssumptions,
+  EnterpriseRoiMode,
   EnterpriseRiskAssessment,
   EnterpriseRiskEvent,
+  EnterpriseRiskTag,
   EnterpriseTask,
   EnterpriseTaskStatus,
 } from '@/types/enterprise-risk';
-import { enterpriseRiskTagLabel } from '@/services/enterprise-risk';
+import { buildEnterpriseRoiSimulation, enterpriseRiskTagLabel } from '@/services/enterprise-risk';
+import {
+  ENTERPRISE_RISK_FIRST_DEMO_EVENT_ID,
+  enterpriseRiskRoiTagsForEvent,
+} from '@/services/enterprise-risk';
 import { escapeHtml, sanitizeUrl } from '@/utils/sanitize';
 import {
   enterpriseRiskPriorityClass,
@@ -16,16 +25,29 @@ import {
 } from './enterprise-risk-rendering';
 
 function formatUsd(value: number): string {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
+  const sign = value < 0 ? '-' : '';
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
 }
 
-function estimateEventExposure(event: EnterpriseRiskEvent, impacts: EnterpriseInternalImpact[]): number {
-  const baseByPriority = event.priority === 'P1' ? 7_200_000 : event.priority === 'P2' ? 3_600_000 : 1_200_000;
-  const departmentFactor = Math.max(1, new Set(impacts.map(impact => impact.department)).size) * 0.18;
-  const severityFactor = Math.max(0.3, Math.min(1.15, event.severityScore / 90));
-  return Math.round(baseByPriority * departmentFactor * severityFactor);
+function formatPercent(value: number): string {
+  return `${Number.isFinite(value) ? Math.round(value) : 0}%`;
+}
+
+function formatTemplate(value: string): string {
+  return value.replace(/_/g, ' ');
+}
+
+function formatAssumptionValue(line: EnterpriseRoiAssumptionLine): string {
+  if (line.unit === 'usd') return formatUsd(line.value);
+  if (line.unit === 'probability' || line.unit === 'percentage') return formatPercent(line.value * 100);
+  if (line.unit === 'days') return `${Math.round(line.value)}d`;
+  if (line.unit === 'usd_per_day') return `${formatUsd(line.value)}/d`;
+  if (line.unit === 'tonnes_co2e') return `${Math.round(line.value).toLocaleString()} tCO2e`;
+  if (line.unit === 'multiple') return `${line.value.toFixed(2)}x`;
+  return Math.round(line.value).toLocaleString();
 }
 
 export class EnterpriseRiskPanel extends Panel {
@@ -33,8 +55,15 @@ export class EnterpriseRiskPanel extends Panel {
   private selectedEventId: string | null = null;
   private acknowledgedAlertIds = new Set<string>();
   private taskStatusOverrides = new Map<string, EnterpriseTaskStatus>();
+  private roiMode: EnterpriseRoiMode = 'base';
+  private roiHorizonDays: EnterpriseRoiAssumptions['horizonDays'] = 365;
+  private roiMitigationIntensity = 0.6;
+  private roiCorrelationHaircutPct = 10;
+  private roiSandboxCollapsed = false;
+  private disabledRoiTags = new Set<EnterpriseRiskTag>();
   private readonly acknowledgedStorageKey = 'wm.enterpriseRisk.acknowledgedAlerts';
   private readonly taskStorageKey = 'wm.enterpriseRisk.taskStatusOverrides';
+  private readonly roiStorageKey = 'wm.enterpriseRisk.roiSandbox';
 
   constructor() {
     super({
@@ -48,6 +77,7 @@ export class EnterpriseRiskPanel extends Panel {
     });
     this.content.addEventListener('click', (event) => this.handleClick(event));
     this.content.addEventListener('keydown', (event) => this.handleKeydown(event));
+    this.content.addEventListener('input', (event) => this.handleInput(event));
     this.loadInteractionState();
     this.showLoading('Linking external signals to enterprise response...');
   }
@@ -78,10 +108,8 @@ export class EnterpriseRiskPanel extends Panel {
     const visibleImpacts = this.getVisibleImpacts();
     const visibleAlerts = this.getVisibleAlerts();
     const visibleTasks = this.getVisibleTasks();
-    const selectedReport = this.buildSelectedReport(assessment.report, selectedEvent, visibleImpacts, visibleTasks);
-    const p1Count = assessment.alerts.filter(alert => alert.priority === 'P1').length;
-    const activeTaskCount = assessment.tasks.filter(task => this.getTaskStatus(task) !== 'done').length;
-    const liveSources = assessment.sourceCoverage.filter(source => source.status === 'live').length;
+    const modeledTasks = visibleTasks.map(task => ({ ...task, status: this.getTaskStatus(task) }));
+    const selectedReport = this.buildSelectedReport(assessment.report, selectedEvent, visibleImpacts, modeledTasks);
 
     this.setContent(`
       <div class="enterprise-risk-v2">
@@ -91,30 +119,22 @@ export class EnterpriseRiskPanel extends Panel {
             <h3>${escapeHtml(assessment.profile.companyName)}</h3>
             <p>${escapeHtml(assessment.profile.primaryNarrative)}</p>
           </div>
-          <div class="er-hero-metrics">
-            <button class="er-metric er-metric-hot" type="button" data-er-action="select-p1"><span>${p1Count}</span><label>P1 alerts</label></button>
-            <button class="er-metric" type="button" data-er-action="focus-tasks"><span>${activeTaskCount}</span><label>active tasks</label></button>
-            <button class="er-metric" type="button" data-er-action="focus-report"><span>${formatUsd(selectedReport.financialImpact.exposureUsd)}</span><label>exposure</label></button>
-            <div class="er-metric"><span>${liveSources}/${assessment.sourceCoverage.length}</span><label>live sources</label></div>
-          </div>
+          ${this.renderRoiCockpit(selectedReport)}
         </div>
 
         <div class="er-demo-banner">
-          Demo scenario stays pinned; live external events append up to 4 cards. Qwen Agent owns identification and transmission; rules only generate candidates and failure fallback.
-          <span class="er-agent-status er-agent-${escapeHtml(assessment.agentWorkflow.status)}">${escapeHtml(assessment.agentWorkflow.detail)}</span>
+          Demo baseline + live cards; live signals fill in as data arrives.
+          <span class="er-agent-status er-agent-${escapeHtml(assessment.agentWorkflow.status)}">
+            <b>Qwen: ${escapeHtml(this.formatWorkflowStatus(assessment.agentWorkflow.status))} mode for live assumptions</b>
+          </span>
+          ${this.renderRoiAgentStatus(assessment)}
         </div>
 
-        ${selectedEvent ? this.renderSelectedFlow(selectedEvent, visibleImpacts, visibleAlerts, visibleTasks, selectedReport) : ''}
+        ${this.renderRoiSandbox(selectedReport)}
+
+        ${selectedEvent ? this.renderSelectedFlow(selectedEvent, visibleImpacts, visibleAlerts, modeledTasks, selectedReport) : ''}
 
         <div class="er-footer">
-          <div class="er-source-strip">
-            ${assessment.sourceCoverage.map(source => `
-              <span class="er-source er-source-${source.status}" title="${escapeHtml(source.detail)}">
-                ${escapeHtml(source.label)}
-              </span>
-            `).join('')}
-          </div>
-          <button class="er-focus-report" type="button" data-er-action="focus-report">Focus report</button>
           <div class="er-updated">Generated ${new Date(assessment.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
         </div>
       </div>
@@ -164,10 +184,68 @@ export class EnterpriseRiskPanel extends Panel {
       this.element.dispatchEvent(new CustomEvent('wm:enterprise-risk-open-events', { bubbles: true }));
       return;
     }
+    if (action === 'toggle-roi-sandbox') {
+      this.roiSandboxCollapsed = !this.roiSandboxCollapsed;
+      this.persistRoiSandbox();
+      const sandbox = target.closest<HTMLElement>('.er-roi-sandbox');
+      const body = sandbox?.querySelector<HTMLElement>('.er-roi-collapsible');
+      const toggle = target.closest<HTMLButtonElement>('[data-er-action="toggle-roi-sandbox"]');
+      sandbox?.classList.toggle('is-collapsed', this.roiSandboxCollapsed);
+      body?.classList.toggle('hidden', this.roiSandboxCollapsed);
+      if (toggle) {
+        toggle.textContent = this.roiSandboxCollapsed ? 'Expand' : 'Collapse';
+        toggle.setAttribute('aria-expanded', this.roiSandboxCollapsed ? 'false' : 'true');
+      }
+      return;
+    }
+    if (action === 'roi-mode') {
+      const mode = target.closest<HTMLElement>('[data-er-mode]')?.dataset.erMode;
+      if (mode === 'base' || mode === 'stress') {
+        this.roiMode = mode;
+        this.persistRoiSandbox();
+        this.render();
+      }
+      return;
+    }
+    if (action === 'roi-horizon') {
+      const horizon = Number(target.closest<HTMLElement>('[data-er-horizon]')?.dataset.erHorizon);
+      if (horizon === 90 || horizon === 365) {
+        this.roiHorizonDays = horizon;
+        this.persistRoiSandbox();
+        this.render();
+      }
+      return;
+    }
+    if (action === 'roi-toggle-tag') {
+      const tag = target.closest<HTMLElement>('[data-er-tag]')?.dataset.erTag as EnterpriseRiskTag | undefined;
+      if (tag && ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'].includes(tag)) {
+        if (this.disabledRoiTags.has(tag)) this.disabledRoiTags.delete(tag);
+        else this.disabledRoiTags.add(tag);
+        this.persistRoiSandbox();
+        this.render();
+      }
+      return;
+    }
     if (action === 'select-p1') {
       const p1 = this.assessment?.events.find(item => item.priority === 'P1');
       if (p1) this.selectEvent(p1.id);
     }
+  }
+
+  private handleInput(event: Event): void {
+    const input = (event.target as HTMLElement).closest<HTMLInputElement>('[data-er-roi-input]');
+    if (!input) return;
+    const value = Number(input.value);
+    if (!Number.isFinite(value)) return;
+    if (input.dataset.erRoiInput === 'intensity') {
+      this.roiMitigationIntensity = Math.max(0.25, Math.min(1, value / 100));
+    } else if (input.dataset.erRoiInput === 'haircut') {
+      this.roiCorrelationHaircutPct = Math.max(0, Math.min(40, value));
+    } else {
+      return;
+    }
+    this.persistRoiSandbox();
+    this.render();
   }
 
   private handleKeydown(event: KeyboardEvent): void {
@@ -237,6 +315,224 @@ export class EnterpriseRiskPanel extends Panel {
     return 'open';
   }
 
+  private getRoiAssumptions(): EnterpriseRoiAssumptions {
+    return {
+      mode: this.roiMode,
+      horizonDays: this.roiHorizonDays,
+      mitigationIntensity: this.roiMitigationIntensity,
+      correlationHaircutPct: this.roiCorrelationHaircutPct,
+      disabledTags: Array.from(this.disabledRoiTags),
+      roiAssumptionPacks: this.assessment?.roiAssumptionPacks ?? {},
+    };
+  }
+
+  private formatWorkflowStatus(status: EnterpriseRiskAssessment['agentWorkflow']['status']): string {
+    if (status === 'applied') return 'Complete';
+    if (status === 'running') return 'Working';
+    if (status === 'fallback') return 'Fallback';
+    return 'Pending';
+  }
+
+  private renderQwenPill(label: string): string {
+    return `<span class="er-agent-badge er-agent-qwen-pill" aria-label="${escapeHtml(label)}">Qwen</span>`;
+  }
+
+  private renderOnnxPill(label: string): string {
+    return `<span class="er-agent-badge er-agent-onnx-pill" aria-label="${escapeHtml(label)}">ONNX</span>`;
+  }
+
+  private renderResponseTask(task: EnterpriseTask): string {
+    const prefix = `${task.department}:`;
+    const title = task.title.startsWith(prefix) ? task.title.slice(prefix.length).trim() : task.title;
+    return `
+      <li>
+        <b>${escapeHtml(task.department)}</b>
+        <span>${escapeHtml(title)}</span>
+      </li>
+    `;
+  }
+
+  private renderRoiAgentStatus(assessment: EnterpriseRiskAssessment): string {
+    const roiEvent = assessment.events.find(event => event.id === ENTERPRISE_RISK_FIRST_DEMO_EVENT_ID)
+      ?? assessment.events.find(event => enterpriseRiskRoiTagsForEvent(event).length > 0);
+    if (!roiEvent) return '';
+    const roiTags = enterpriseRiskRoiTagsForEvent(roiEvent);
+    if (!roiTags.length) return '';
+    const packs = assessment.roiAssumptionPacks ?? {};
+    const completedTags = roiTags.filter(tag => packs[`${roiEvent.id}:${tag}`]?.generatedBy === 'qwen_agent');
+    const detail = roiTags.map(enterpriseRiskTagLabel).join(' / ');
+    const complete = completedTags.length === roiTags.length;
+    const statusText = complete ? 'Complete' : 'Working';
+    const qwenPill = complete ? ` ${this.renderQwenPill('Qwen ROI Agent')}` : '';
+    return `
+      <span class="er-agent-status er-agent-roi ${complete ? 'er-agent-applied' : 'er-agent-running'}">
+        <b>ROI: ${statusText}${qwenPill} on ${completedTags.length}/${roiTags.length} axes</b>
+        <span>${escapeHtml(detail)}</span>
+      </span>
+    `;
+  }
+
+  private renderRoiCockpit(report: EnterpriseReportSummary): string {
+    const impact = report.financialImpact;
+    const roiClass = impact.compositeRoiPct >= 0
+      ? 'er-roi-positive er-roi-kpi-highlight'
+      : 'er-roi-negative er-roi-kpi-negative-highlight';
+    return `
+      <div class="er-roi-cockpit" aria-label="ROI simulation summary">
+        <button class="er-roi-kpi er-roi-kpi-loss" type="button" data-er-action="focus-report">
+          <span>${formatUsd(impact.expectedLossUsd)}</span>
+          <label>Expected loss</label>
+        </button>
+        <button class="er-roi-kpi er-roi-kpi-save er-roi-kpi-highlight" type="button" data-er-action="focus-report">
+          <span>${formatUsd(impact.expectedSavingUsd)}</span>
+          <label>Expected savings</label>
+        </button>
+        <button class="er-roi-kpi" type="button" data-er-action="focus-report">
+          <span>${formatUsd(impact.mitigationCostUsd)}</span>
+          <label>System cost</label>
+        </button>
+        <button class="er-roi-kpi ${impact.netSavingUsd >= 0 ? 'er-roi-positive' : 'er-roi-negative'}" type="button" data-er-action="focus-report">
+          <span>${formatUsd(impact.netSavingUsd)}</span>
+          <label>Net savings</label>
+        </button>
+        <button class="er-roi-kpi ${roiClass}" type="button" data-er-action="focus-report">
+          <span>${formatPercent(impact.compositeRoiPct)}</span>
+          <label>Composite ROI</label>
+        </button>
+      </div>
+    `;
+  }
+
+  private renderRoiSandbox(report: EnterpriseReportSummary): string {
+    const impact = report.financialImpact;
+    const simulation = impact.simulation;
+    const intensityPct = Math.round(this.roiMitigationIntensity * 100);
+    const modeButton = (mode: EnterpriseRoiMode, label: string) => `
+      <button class="er-roi-segment${this.roiMode === mode ? ' active' : ''}" type="button" data-er-action="roi-mode" data-er-mode="${mode}">${label}</button>
+    `;
+    const horizonButton = (days: EnterpriseRoiAssumptions['horizonDays']) => `
+      <button class="er-roi-segment${this.roiHorizonDays === days ? ' active' : ''}" type="button" data-er-action="roi-horizon" data-er-horizon="${days}">${days === 365 ? '1y' : `${days}d`}</button>
+    `;
+    const bodyHidden = this.roiSandboxCollapsed ? ' hidden' : '';
+    return `
+      <section class="er-roi-sandbox${this.roiSandboxCollapsed ? ' is-collapsed' : ''}" id="enterpriseRiskReport">
+        <div class="er-roi-sandbox-head">
+          <div class="er-section-title">Triggered Risk ROI Simulation Sandbox</div>
+          <button class="er-mini-action er-roi-collapse-toggle" type="button" data-er-action="toggle-roi-sandbox" aria-expanded="${this.roiSandboxCollapsed ? 'false' : 'true'}">
+            ${this.roiSandboxCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+        </div>
+        <div class="er-roi-collapsible${bodyHidden}">
+          <div class="er-roi-terminal-head">
+            <div>
+              <strong>${formatUsd(impact.expectedSavingUsd)}</strong>
+              <span>expected savings after ${this.roiCorrelationHaircutPct}% correlation haircut</span>
+            </div>
+            <div>
+              <strong class="${impact.compositeRoiPct >= 0 ? 'er-roi-positive' : 'er-roi-negative'}">${formatPercent(impact.compositeRoiPct)}</strong>
+              <span>composite ROI across ${simulation.scenarioCount} active risk axes</span>
+            </div>
+          </div>
+          <div class="er-roi-controls">
+            <div class="er-roi-control">
+              <label>Scenario mode</label>
+              <div class="er-roi-segments">${modeButton('base', 'Base')}${modeButton('stress', 'Stress')}</div>
+            </div>
+            <div class="er-roi-control">
+              <label>Time horizon</label>
+              <div class="er-roi-segments">${horizonButton(90)}${horizonButton(365)}</div>
+            </div>
+            <div class="er-roi-control">
+              <label>Mitigation intensity <b>${intensityPct}%</b></label>
+              <input type="range" min="25" max="100" step="5" value="${intensityPct}" data-er-roi-input="intensity" aria-label="Mitigation intensity">
+            </div>
+            <div class="er-roi-control">
+              <label>Correlation haircut <b>${this.roiCorrelationHaircutPct}%</b></label>
+              <input type="range" min="0" max="40" step="5" value="${this.roiCorrelationHaircutPct}" data-er-roi-input="haircut" aria-label="Correlation haircut">
+            </div>
+          </div>
+          <div class="er-risk-scenario-table" role="table" aria-label="Risk scenario ROI table">
+            <div class="er-scenario-head" role="row">
+              <span>Risk axis</span>
+              <span>Prob.</span>
+              <span>Exposure</span>
+              <span>Base loss</span>
+              <span>Residual</span>
+              <span>Saving</span>
+              <span>Cost</span>
+              <span>Net</span>
+              <span>ROI</span>
+            </div>
+            ${simulation.scenarios.map(scenario => this.renderRoiScenarioRow(scenario)).join('')}
+          </div>
+          <div class="er-roi-ledger-wrap">
+          ${this.renderRoiAssumptionLedger(impact.assumptionPacks)}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  private renderRoiScenarioRow(scenario: EnterpriseReportSummary['financialImpact']['scenarios'][number]): string {
+    const roiClass = scenario.roiPct >= 0 ? 'er-roi-positive' : 'er-roi-negative';
+    const axisClass = `er-risk-${scenario.tag.replace(/_/g, '-')}`;
+    const driverTitle = scenario.drivers.join(' | ');
+    return `
+      <div class="er-scenario-row ${scenario.active ? '' : 'is-disabled'} ${axisClass}" role="row" title="${escapeHtml(driverTitle)}">
+        <button class="er-axis-toggle" type="button" data-er-action="roi-toggle-tag" data-er-tag="${escapeHtml(scenario.tag)}">
+          <i></i>
+          <span>${escapeHtml(scenario.label)}</span>
+        </button>
+        <span>${formatPercent(scenario.probabilityPct)}</span>
+        <span class="er-roi-exposure">${formatUsd(scenario.grossExposureUsd)}</span>
+        <span>${formatUsd(scenario.baselineLossUsd)}</span>
+        <span>${formatUsd(scenario.residualLossUsd)}</span>
+        <span class="er-roi-saving">${formatUsd(scenario.expectedSavingUsd)}</span>
+        <span>${formatUsd(scenario.mitigationCostUsd)}</span>
+        <span class="${scenario.netSavingUsd < 0 ? 'er-roi-negative' : ''}">${formatUsd(scenario.netSavingUsd)}</span>
+        <span class="er-roi-axis-roi ${roiClass}">${formatPercent(scenario.roiPct)}</span>
+      </div>
+    `;
+  }
+
+  private renderRoiAssumptionLedger(packs: EnterpriseRoiAssumptionPack[]): string {
+    if (!packs.length) return '';
+    const uniquePacks = Array.from(new Map(packs.map(pack => [`${pack.eventId}:${pack.template}:${pack.generatedBy}`, pack])).values());
+    return `
+      <div class="er-roi-assumption-ledger" aria-label="ROI assumption ledger">
+        ${uniquePacks.slice(0, 4).map(pack => `
+          <div class="er-roi-assumption-pack">
+            <div class="er-roi-assumption-head">
+              <strong>${escapeHtml(formatTemplate(pack.template))}</strong>
+              <span>${escapeHtml(pack.generatedBy === 'qwen_agent' ? 'Qwen assumptions' : 'Deterministic fallback')} - ${(pack.confidence * 100).toFixed(0)}%</span>
+            </div>
+            <div class="er-roi-assumption-rows">
+              ${pack.assumptions
+                .filter(line => ['exposureBaseUsd', 'eventProbability', 'detectionHitRate', 'mitigationEffectiveness', 'annualSystemCostUsd'].includes(line.key))
+                .slice(0, 5)
+                .map(line => this.renderRoiAssumptionRow(line))
+                .join('')}
+            </div>
+            <div class="er-roi-assumption-refs">${escapeHtml(pack.references.slice(0, 2).join(' / ') || 'Open FAIR / NIST SP 800-30')}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  private renderRoiAssumptionRow(line: EnterpriseRoiAssumptionLine): string {
+    const source = line.sourceUrl
+      ? `<a href="${sanitizeUrl(line.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(line.source)}</a>`
+      : escapeHtml(line.source);
+    return `
+      <div class="er-roi-assumption-row">
+        <span>${escapeHtml(line.label)}</span>
+        <b>${escapeHtml(formatAssumptionValue(line))}</b>
+        <small>${source} - confidence ${(line.confidence * 100).toFixed(0)}%</small>
+      </div>
+    `;
+  }
+
   private buildSelectedReport(
     baseReport: EnterpriseReportSummary,
     selectedEvent: EnterpriseRiskEvent | null,
@@ -249,16 +545,24 @@ export class EnterpriseRiskPanel extends Panel {
     const recommendations = tasks.length
       ? tasks.slice(0, 5).map(task => task.title)
       : impacts.slice(0, 4).map(impact => `${impact.department}: ${impact.action}`);
-    const exposure = estimateEventExposure(selectedEvent, impacts);
+    const simulation = buildEnterpriseRoiSimulation(selectedEvent, impacts, tasks, this.getRoiAssumptions());
     return {
       ...baseReport,
       id: `report-${selectedEvent.id}`,
       eventSummary: selectedEvent.summary,
       internalImpact: `${selectedEvent.priority} event mapped to ${departments.join(' / ') || 'Risk Office'}, affecting ${businessLines.join(' / ') || 'priority business lines'}.`,
-      recommendedActions: recommendations.length ? recommendations : ['Continue monitoring this event and review internal exposure after the next data refresh.'],
+      recommendedActions: recommendations.length ? recommendations : ['Continue monitoring this event and review internal ROI after the next data refresh.'],
       financialImpact: {
-        exposureUsd: exposure,
-        estimate: `Estimated selected-event impact is approximately ${formatUsd(exposure)} based on severity, department coverage, and business-line exposure.`,
+        exposureUsd: simulation.totalExposureUsd,
+        expectedLossUsd: simulation.expectedLossUsd,
+        expectedSavingUsd: simulation.expectedSavingUsd,
+        mitigationCostUsd: simulation.mitigationCostUsd,
+        netSavingUsd: simulation.netSavingUsd,
+        compositeRoiPct: simulation.compositeRoiPct,
+        scenarios: simulation.scenarios,
+        simulation,
+        assumptionPacks: simulation.assumptionPacks,
+        estimate: `FAIR-lite ROI sandbox: ${formatUsd(simulation.expectedSavingUsd)} expected savings against ${formatUsd(simulation.mitigationCostUsd)} system cost; composite ROI ${simulation.compositeRoiPct}%.`,
         confidence: selectedEvent.isDemoSeed ? 'demo_estimate' : 'modeled',
       },
     };
@@ -282,9 +586,29 @@ export class EnterpriseRiskPanel extends Panel {
           }));
         }
       }
+      const rawRoi = window.localStorage.getItem(this.roiStorageKey);
+      if (rawRoi) {
+        const state = JSON.parse(rawRoi);
+        if (state && typeof state === 'object') {
+          if (state.mode === 'base' || state.mode === 'stress') this.roiMode = state.mode;
+          else if (state.mode === 'aggressive') this.roiMode = 'stress';
+          else if (state.mode === 'conservative') this.roiMode = 'base';
+          if (state.horizonDays === 90 || state.horizonDays === 365) this.roiHorizonDays = state.horizonDays;
+          else if (state.horizonDays === 30 || state.horizonDays === 180) this.roiHorizonDays = 90;
+          if (typeof state.mitigationIntensity === 'number') this.roiMitigationIntensity = Math.max(0.25, Math.min(1, state.mitigationIntensity));
+          if (typeof state.correlationHaircutPct === 'number') this.roiCorrelationHaircutPct = Math.max(0, Math.min(40, state.correlationHaircutPct));
+          if (typeof state.collapsed === 'boolean') this.roiSandboxCollapsed = state.collapsed;
+          if (Array.isArray(state.disabledTags)) {
+            this.disabledRoiTags = new Set(state.disabledTags.filter((tag: unknown): tag is EnterpriseRiskTag => {
+              return typeof tag === 'string' && ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'].includes(tag);
+            }));
+          }
+        }
+      }
     } catch {
       this.acknowledgedAlertIds = new Set<string>();
       this.taskStatusOverrides = new Map<string, EnterpriseTaskStatus>();
+      this.disabledRoiTags = new Set<EnterpriseRiskTag>();
     }
   }
 
@@ -304,6 +628,21 @@ export class EnterpriseRiskPanel extends Panel {
     }
   }
 
+  private persistRoiSandbox(): void {
+    try {
+      window.localStorage.setItem(this.roiStorageKey, JSON.stringify({
+        mode: this.roiMode,
+        horizonDays: this.roiHorizonDays,
+        mitigationIntensity: this.roiMitigationIntensity,
+        correlationHaircutPct: this.roiCorrelationHaircutPct,
+        collapsed: this.roiSandboxCollapsed,
+        disabledTags: Array.from(this.disabledRoiTags),
+      }));
+    } catch {
+      // Local persistence is best-effort for the POC UI.
+    }
+  }
+
   private renderSelectedFlow(
     event: EnterpriseRiskEvent,
     impacts: EnterpriseInternalImpact[],
@@ -317,6 +656,15 @@ export class EnterpriseRiskPanel extends Panel {
     const transmissionLine = event.agent?.transmissionSource === 'qwen_agent'
       ? `Qwen transmission mapped ${impacts.length} internal item(s)`
       : 'Rule fallback transmission candidate';
+    const identificationBadge = event.agent?.identificationSource === 'qwen_agent'
+      ? this.renderQwenPill('Qwen Identification Agent')
+      : '';
+    const transmissionBadge = event.agent?.transmissionSource === 'qwen_agent'
+      ? this.renderQwenPill('Qwen Transmission Agent')
+      : '';
+    const responseBadge = tasks.some(task => task.source === 'qwen_agent')
+      ? this.renderQwenPill('Qwen Response Agent')
+      : '';
     const evidence = event.evidenceSources?.slice(0, 3) ?? [];
     const evidenceHtml = evidence.length
       ? evidence.map(source => {
@@ -345,29 +693,29 @@ export class EnterpriseRiskPanel extends Panel {
         <div class="er-flow-grid">
           <div class="er-flow-card">
             <span class="er-flow-index">1</span>
-            <strong>Perception Layer</strong>
+            <strong class="er-flow-title">Perception Layer ${this.renderOnnxPill('Browser ONNX Perception Model')}</strong>
             <p>${escapeHtml(event.title)}</p>
             <ul class="er-evidence-list">${evidenceHtml}</ul>
           </div>
           <div class="er-flow-card">
             <span class="er-flow-index">2</span>
-            <strong>Identification Layer - Qwen Identification Agent</strong>
+            <strong class="er-flow-title">Identification Layer ${identificationBadge}</strong>
             <p class="er-agent-output">${escapeHtml(agentLine)}</p>
             <p>${escapeHtml(event.tags.map(enterpriseRiskTagLabel).join(' / '))} - ${escapeHtml(event.priority)} - score ${event.severityScore}</p>
             <ul>${event.explanation.triggerBasis.slice(0, 4).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
           </div>
           <div class="er-flow-card">
             <span class="er-flow-index">3</span>
-            <strong>Transmission Layer - Qwen Transmission Agent</strong>
+            <strong class="er-flow-title">Transmission Layer ${transmissionBadge}</strong>
             <p class="er-agent-output">${escapeHtml(transmissionLine)}</p>
             ${routeHtml}
             <ul class="er-transmission-list">${impactHtml}</ul>
           </div>
-          <div class="er-flow-card">
+          <div class="er-flow-card er-flow-response">
             <span class="er-flow-index">4</span>
-            <strong>Response Layer</strong>
-            <p>${escapeHtml(alerts.length ? alerts[0]!.message : report.financialImpact.estimate)}</p>
-            <ul>${tasks.slice(0, 4).map(task => `<li>${escapeHtml(task.department)}: ${escapeHtml(task.title)}</li>`).join('') || '<li>Monitor and refresh assessment.</li>'}</ul>
+            <strong class="er-flow-title">Response Layer ${responseBadge}</strong>
+            <p class="er-response-summary">${escapeHtml(alerts.length ? alerts[0]!.message : report.financialImpact.estimate)}</p>
+            <ul class="er-response-list">${tasks.slice(0, 4).map(task => this.renderResponseTask(task)).join('') || '<li><b>Monitor</b><span>Refresh assessment.</span></li>'}</ul>
           </div>
         </div>
       </section>

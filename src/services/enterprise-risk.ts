@@ -4,6 +4,12 @@ import type {
   EnterpriseDepartment,
   EnterpriseInternalImpact,
   EnterpriseReportSummary,
+  EnterpriseRoiAssumptions,
+  EnterpriseRoiAssumptionLine,
+  EnterpriseRoiAssumptionPack,
+  EnterpriseRoiScenario,
+  EnterpriseRoiSimulation,
+  EnterpriseRoiTemplate,
   EnterpriseRiskAssessment,
   EnterpriseRiskEvent,
   EnterpriseRiskInputs,
@@ -28,12 +34,25 @@ const LIVE_EVENT_WINDOW_MS = 7 * DAY_MS;
 const MIN_AXIS_COVERAGE_SCORE = 52;
 const MIN_BUSINESS_TRANSMISSION_SCORE = 38;
 const MIN_SEA_COVERAGE_SCORE = 46;
+const MIN_SEA_IMPACT_SCORE = 54;
+const MAX_SEA_LIVE_EVENTS = 1;
 
 const TAG_LABELS: Record<EnterpriseRiskTag, string> = {
   geopolitical: 'Geopolitical Risk',
   regulatory: 'Regulatory Risk',
   supply_chain: 'Supply Chain Risk',
   financial_fx: 'FX Risk',
+};
+
+export const ENTERPRISE_ROI_RISK_ORDER: EnterpriseRiskTag[] = ['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'];
+export const ENTERPRISE_RISK_ROI_CALCULATION_SCOPE: 'first_demo_only' | 'all_events' = 'first_demo_only';
+export const ENTERPRISE_RISK_FIRST_DEMO_EVENT_ID = 'demo-cbam-red-sea-001';
+
+export const DEFAULT_ENTERPRISE_ROI_ASSUMPTIONS: EnterpriseRoiAssumptions = {
+  mode: 'base',
+  horizonDays: 365,
+  mitigationIntensity: 0.6,
+  correlationHaircutPct: 10,
 };
 
 const TAG_KEYWORDS: Record<EnterpriseRiskTag, string[]> = {
@@ -185,6 +204,17 @@ const GENERIC_LOW_TRANSMISSION_PATTERNS = [
   /\b(tourism|tourist|holiday|arrivals?|hotel|resort)\b(?!.*\b(port|shipping|freight|supplier|factory|manufacturing|export|logistics|currency|fx|exchange rate|dong|baht|rupiah|battery|component|nickel)\b)/,
 ];
 
+const MACRO_MARKET_ONLY_PATTERNS = [
+  /\bgold\b.*\b(?:war|uncertainty|interest rates?|rate outlook|dollar|yields?)\b/,
+  /\b(?:war|uncertainty|interest rates?|rate outlook|dollar|yields?)\b.*\bgold\b/,
+  /\benergy imports?\b.*\b(?:fuel exports?|crude|oil|gas)\b/,
+  /\b(?:fuel exports?|crude|oil|gas)\b.*\benergy imports?\b/,
+  /\bfactory inflation\b.*\b(?:energy price|price shock|producer prices?)\b/,
+  /\b(?:energy price|price shock|producer prices?)\b.*\bfactory inflation\b/,
+  /\b(?:royalties|royalty|export duties|export duty)\b.*\bminerals?\b/,
+  /\bminerals?\b.*\b(?:royalties|royalty|export duties|export duty)\b/,
+];
+
 const GENERIC_FX_MARKET_QUOTE_PATTERNS = [
   /\btradingview\b/,
   /\b(?:gold|silver|forex|fx|currency|exchange)\s+(?:rates?|prices?|quotes?)\b/,
@@ -254,7 +284,8 @@ const ENTERPRISE_RISK_REQUIRED_KEYWORDS = [
   'aluminum', 'aluminium', 'lithium', 'nickel', 'cobalt', 'rare earth', 'critical mineral',
   'supply chain', 'supplier', 'factory', 'manufacturing', 'production', 'shutdown',
   'port', 'shipping', 'freight', 'container', 'reroute', 'logistics', 'suez', 'red sea',
-  'malacca', 'strait of hormuz', 'panama canal', 'tariff', 'customs', 'export control',
+  'malacca', 'hormuz', 'strait of hormuz', 'panama canal', 'canal', 'maritime security',
+  'fuel surcharge', 'bunker fuel', 'tariff', 'customs', 'export control',
   'trade restriction', 'sanction', 'regulation', 'audit', 'certification', 'due diligence',
   'euro', 'eur', 'yuan', 'renminbi', 'vnd', 'dong', 'baht', 'rupiah', 'currency', 'fx',
   'exchange rate', 'freight rate',
@@ -740,12 +771,21 @@ function liveWindowLabel(timestamp: number): string {
 function isLiveContextRelevant(text: string): boolean {
   const lower = normalizeText(text);
   if (isStaticReferenceContent(text)) return false;
+  if (isMacroMarketOnlyNews(text)) return false;
   if (isGenericFxMarketQuote(text) && !hasEnterpriseFxTransmission(text)) return false;
-  if (hasLowEnterpriseSignal(text) && enterpriseSignalStrength(text) < 6) return false;
-  if (enterpriseSignalStrength(text) < 4) return false;
-  if (businessTransmissionScore(text) < MIN_BUSINESS_TRANSMISSION_SCORE) return false;
-  return isScenarioRelevant(text)
-    && LIVE_CONTEXT_KEYWORDS.some(term => lower.includes(term));
+  const signalStrength = enterpriseSignalStrength(text);
+  if (hasLowEnterpriseSignal(text) && signalStrength < 6) return false;
+
+  const transmissionScore = businessTransmissionScore(text);
+  const scenarioRelevant = isScenarioRelevant(text);
+  const hasLiveKeyword = LIVE_CONTEXT_KEYWORDS.some(term => lower.includes(term));
+  const hasLiveTrigger = hasConcreteLiveTrigger(text);
+  const hasRouteOrEnterpriseShock = /\b(red sea|suez|malacca|hormuz|strait of hormuz|panama canal|maritime security|fuel surcharge|freight|shipping|container|customs|tariff|cbam|carbon border|export control|trade restriction|battery regulation|factory|supplier|receivables?|export margin)\b/.test(lower);
+
+  if (signalStrength < 3 && transmissionScore < MIN_BUSINESS_TRANSMISSION_SCORE + 10) return false;
+  if (transmissionScore >= MIN_BUSINESS_TRANSMISSION_SCORE && scenarioRelevant && (hasLiveKeyword || hasLiveTrigger)) return true;
+  if (transmissionScore >= MIN_BUSINESS_TRANSMISSION_SCORE + 10 && hasRouteOrEnterpriseShock && (hasLiveKeyword || hasLiveTrigger)) return true;
+  return false;
 }
 
 function fallbackLiveTags(text: string): EnterpriseRiskTag[] {
@@ -791,8 +831,22 @@ function liveContextScore(text: string, baseScore: number): number {
 
 function buildImpactPath(text: string, markets: string[] = []): EnterpriseRiskEvent['impactPath'] | undefined {
   const combined = `${text} ${markets.join(' ')}`;
+  const lower = normalizeText(combined);
   const tokens = tokenizeForMatch(combined);
-  const route = ROUTE_KEYWORDS.find(candidate => candidate.keywords.some(keyword => matchKeyword(tokens, keyword)));
+  const hasSeaMarket = markets.some(market => SEA_MARKETS.has(market))
+    || /\b(vietnam|vnd|dong|ho chi minh|saigon|hanoi|hai phong|thailand|thai|baht|indonesia|rupiah|jakarta|malacca|singapore)\b/.test(lower);
+  const hasEuropeChokepoint = /\b(red sea|suez|cbam|carbon border|rotterdam|hamburg|european commission)\b/.test(lower);
+  const route = ROUTE_KEYWORDS
+    .map((candidate, index) => {
+      let score = candidate.keywords.reduce((sum, keyword) => sum + (matchKeyword(tokens, keyword) ? 1 : 0), 0);
+      if (hasSeaMarket && candidate.routeIds.includes('vietnam-supplier-corridor')) score += 6;
+      if (hasSeaMarket && candidate.routeIds.includes('intra-asia-container')) score += 3;
+      if (hasSeaMarket && candidate.routeIds.includes('china-europe-suez') && !hasEuropeChokepoint) score -= 4;
+      if (hasEuropeChokepoint && candidate.routeIds.includes('china-europe-suez')) score += 4;
+      return { candidate, score, index };
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.candidate;
   if (!route) return undefined;
   return {
     routeIds: route.routeIds,
@@ -900,8 +954,17 @@ function eventFromNews(item: NewsItem): EnterpriseRiskEvent | null {
   };
 }
 
+function clusterContextText(cluster: ClusteredEvent): string {
+  return [
+    cluster.primaryTitle,
+    cluster.primarySource,
+    ...cluster.topSources.slice(0, 4).map(source => source.name),
+    ...cluster.allItems.slice(0, 5).flatMap(item => [item.title, item.snippet ?? '', item.source]),
+  ].join(' ');
+}
+
 function eventFromCluster(cluster: ClusteredEvent): EnterpriseRiskEvent | null {
-  const text = `${cluster.primaryTitle} ${cluster.topSources.map(s => s.name).join(' ')}`;
+  const text = clusterContextText(cluster);
   const occurredAt = cluster.lastUpdated.getTime();
   if (!isWithinLiveWindow(occurredAt)) return null;
   if (!isLiveContextRelevant(text)) return null;
@@ -1074,7 +1137,6 @@ function eventBusinessText(event: EnterpriseRiskEvent): string {
     event.title,
     event.summary,
     event.source,
-    event.tags.join(' '),
     event.countries.join(' '),
     event.affectedMarkets.join(' '),
     event.impactPath?.label ?? '',
@@ -1106,6 +1168,22 @@ function isGenericFxMarketQuote(text: string): boolean {
 function hasConcreteLiveTrigger(text: string): boolean {
   const lower = normalizeText(text);
   return CONCRETE_LIVE_TRIGGER_PATTERNS.some(pattern => pattern.test(lower));
+}
+
+function hasDirectEnterpriseTransmission(text: string): boolean {
+  const lower = normalizeText(text);
+  return hasKeyword(text, PRODUCT_COMPONENT_KEYWORDS)
+    || hasKeyword(text, HARD_COMPLIANCE_KEYWORDS)
+    || /\b(?:battery materials?|critical minerals?|lithium|nickel|cobalt|graphite|rare earth|aluminum|aluminium)\b.*\b(?:supplier|factory|manufacturing|exporter|component|input costs?|shortage|tariff|duties|customs)\b/.test(lower)
+    || /\b(?:red sea|suez|malacca|strait of hormuz|hormuz|panama canal|shipping|freight|container|port|reroute|fuel surcharge|maritime security)\b.*\b(?:export|exports|shipment|shipments|supplier|factory|battery|component|rotterdam|hamburg|europe|eu)\b/.test(lower)
+    || /\b(?:export|exports|shipment|shipments|supplier|factory|battery|component|rotterdam|hamburg|europe|eu)\b.*\b(?:red sea|suez|malacca|strait of hormuz|hormuz|panama canal|shipping|freight|container|port|reroute|fuel surcharge|maritime security)\b/.test(lower)
+    || /\b(?:receivables?|export margin|hedg(?:e|ing)|quotation|pricing|working capital|payment terms)\b/.test(lower);
+}
+
+function isMacroMarketOnlyNews(text: string): boolean {
+  const lower = normalizeText(text);
+  if (!MACRO_MARKET_ONLY_PATTERNS.some(pattern => pattern.test(lower))) return false;
+  return !hasDirectEnterpriseTransmission(text);
 }
 
 function isStaticReferenceContent(text: string): boolean {
@@ -1182,7 +1260,9 @@ function businessTransmissionScore(text: string, event?: EnterpriseRiskEvent): n
 }
 
 function hasBusinessTransmission(event: EnterpriseRiskEvent): boolean {
-  return businessTransmissionScore(eventBusinessText(event), event) >= MIN_BUSINESS_TRANSMISSION_SCORE;
+  const text = eventBusinessText(event);
+  if (isMacroMarketOnlyNews(text)) return false;
+  return businessTransmissionScore(text, event) >= MIN_BUSINESS_TRANSMISSION_SCORE;
 }
 
 function isSoutheastAsiaBusinessEvent(event: EnterpriseRiskEvent): boolean {
@@ -1192,9 +1272,11 @@ function isSoutheastAsiaBusinessEvent(event: EnterpriseRiskEvent): boolean {
   const marketHit = Array.from(SEA_MARKETS).some(market => markets.has(market) || matchesMarket(text, market));
   const routeHit = /\b(vietnam|vnd|dong|thailand|baht|indonesia|rupiah|malacca|singapore|ho chi minh|hanoi|hai phong|laem chabang|bangkok|jakarta|surabaya|batam)\b/.test(lower);
   if (isStaticReferenceContent(text)) return false;
+  if (isMacroMarketOnlyNews(text)) return false;
   if (isGenericFxMarketQuote(text) && !hasEnterpriseFxTransmission(text)) return false;
   return (marketHit || routeHit)
-    && businessTransmissionScore(text, event) >= MIN_SEA_COVERAGE_SCORE;
+    && businessTransmissionScore(text, event) >= MIN_SEA_COVERAGE_SCORE
+    && businessImpactScore(event) >= MIN_SEA_IMPACT_SCORE;
 }
 
 function businessScenarioFitScore(event: EnterpriseRiskEvent): number {
@@ -1428,23 +1510,19 @@ function selectLiveEvents(events: EnterpriseRiskEvent[], limit: number): Enterpr
   const selected: EnterpriseRiskEvent[] = [];
   const selectedIds = new Set<string>();
   const coveredAxes = new Set<EnterpriseRiskTag>();
+  let selectedSeaCount = 0;
 
   const add = (event: EnterpriseRiskEvent) => {
     if (selectedIds.has(event.id) || selected.length >= limit) return;
+    const isSea = isSoutheastAsiaBusinessEvent(event);
+    if (isSea && selectedSeaCount >= MAX_SEA_LIVE_EVENTS) return;
     selected.push(event);
     selectedIds.add(event.id);
+    if (isSea) selectedSeaCount += 1;
     for (const axis of liveRiskCoverageAxes(event)) coveredAxes.add(axis);
   };
 
   if (ranked[0]) add(ranked[0]);
-
-  if (!selected.some(isSoutheastAsiaBusinessEvent)) {
-    const seaCandidate = ranked.find(event =>
-      !selectedIds.has(event.id)
-      && isSoutheastAsiaBusinessEvent(event),
-    );
-    if (seaCandidate) add(seaCandidate);
-  }
 
   for (const axis of LIVE_RISK_AXIS_ORDER) {
     if (selected.length >= limit || coveredAxes.has(axis)) continue;
@@ -1549,6 +1627,483 @@ function buildTasks(impacts: EnterpriseInternalImpact[]): EnterpriseTask[] {
   return tasks.slice(0, 12);
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeRoiAssumptions(assumptions?: Partial<EnterpriseRoiAssumptions>): EnterpriseRoiAssumptions {
+  const mode = assumptions?.mode === 'stress'
+    ? 'stress'
+    : DEFAULT_ENTERPRISE_ROI_ASSUMPTIONS.mode;
+  const horizonDays = [90, 365].includes(Number(assumptions?.horizonDays))
+    ? assumptions!.horizonDays as EnterpriseRoiAssumptions['horizonDays']
+    : Number(assumptions?.horizonDays) === 30 || Number(assumptions?.horizonDays) === 180
+      ? 90
+    : DEFAULT_ENTERPRISE_ROI_ASSUMPTIONS.horizonDays;
+  return {
+    mode,
+    horizonDays,
+    mitigationIntensity: clampNumber(
+      assumptions?.mitigationIntensity ?? DEFAULT_ENTERPRISE_ROI_ASSUMPTIONS.mitigationIntensity,
+      0.25,
+      1,
+    ),
+    correlationHaircutPct: clampNumber(
+      assumptions?.correlationHaircutPct ?? DEFAULT_ENTERPRISE_ROI_ASSUMPTIONS.correlationHaircutPct,
+      0,
+      40,
+    ),
+    disabledTags: assumptions?.disabledTags?.filter((tag): tag is EnterpriseRiskTag => ENTERPRISE_ROI_RISK_ORDER.includes(tag)) ?? [],
+    roiAssumptionPacks: assumptions?.roiAssumptionPacks ?? {},
+  };
+}
+
+const ENTERPRISE_ROI_MODEL_VERSION = 'fair-lite-v1-qwen-assisted';
+
+const ROI_DEPARTMENT_COVERAGE: Record<EnterpriseRiskTag, EnterpriseDepartment[]> = {
+  geopolitical: ['Operations', 'Supply Chain'],
+  regulatory: ['Compliance', 'Sales'],
+  supply_chain: ['Supply Chain', 'Operations'],
+  financial_fx: ['Finance', 'Sales'],
+};
+
+const ROI_TEMPLATE_REFERENCES: Record<EnterpriseRoiTemplate, string[]> = {
+  regulatory: ['Open FAIR', 'NIST SP 800-30', 'EU CBAM', 'GHG Protocol Product Standard'],
+  supply_chain: ['Open FAIR', 'NIST SP 800-30', 'Supply-chain TTR/TTS'],
+  financial_fx: ['Open FAIR', 'NIST SP 800-30'],
+  geopolitical: ['Open FAIR', 'NIST SP 800-30'],
+};
+
+const ROI_SOURCE_URLS = {
+  openFair: 'https://www.opengroup.org/open-fair',
+  nist: 'https://csrc.nist.gov/pubs/sp/800/30/r1/final',
+  iso31010: 'https://www.iso.org/standard/72140.html',
+  cbam: 'https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism_en',
+  ghg: 'https://ghgprotocol.org/product-standard',
+};
+
+function modeProfile(mode: EnterpriseRoiAssumptions['mode']): { probability: number; control: number; cost: number } {
+  if (mode === 'stress') return { probability: 1.18, control: 1.08, cost: 1.03 };
+  return { probability: 1, control: 1, cost: 1 };
+}
+
+function annualizedProbability(probability: number, horizonDays: EnterpriseRoiAssumptions['horizonDays']): number {
+  const annualProbability = clampNumber(probability, 0, 0.95);
+  const yearFraction = clampNumber(horizonDays / 365, 0.05, 1);
+  return clampNumber(1 - Math.pow(1 - annualProbability, yearFraction), 0, 0.95);
+}
+
+function taskStatusCoverageScore(tasks: EnterpriseTask[]): number {
+  if (!tasks.length) return 0;
+  const score = tasks.reduce((sum, task) => {
+    if (task.status === 'done') return sum + 1;
+    if (task.status === 'in_progress') return sum + 0.72;
+    if (task.status === 'open') return sum + 0.42;
+    return sum + 0.22;
+  }, 0);
+  return clampNumber(score / tasks.length, 0, 1);
+}
+
+function businessLinesForRoiScenario(event: EnterpriseRiskEvent, tag: EnterpriseRiskTag): typeof PROFILE.businessLines {
+  const matched = resolveBusinessLines(event);
+  if (tag === 'regulatory') {
+    const compliance = PROFILE.businessLines.find(line => line.id === 'cbam-compliance-program');
+    return compliance ? uniqueBusinessLines([compliance, ...matched]) : matched;
+  }
+  if (tag === 'financial_fx') {
+    const fxLines = PROFILE.businessLines.filter(line => line.exportSharePct >= 12);
+    return uniqueBusinessLines([...matched, ...fxLines]).slice(0, 3);
+  }
+  if (tag === 'supply_chain') {
+    return matched.filter(line => line.id !== 'cbam-compliance-program').length
+      ? matched.filter(line => line.id !== 'cbam-compliance-program')
+      : matched;
+  }
+  return matched;
+}
+
+function uniqueBusinessLines(lines: typeof PROFILE.businessLines): typeof PROFILE.businessLines {
+  const seen = new Set<string>();
+  return lines.filter(line => {
+    if (seen.has(line.id)) return false;
+    seen.add(line.id);
+    return true;
+  });
+}
+
+function roiDrivers(event: EnterpriseRiskEvent, tag: EnterpriseRiskTag, lines: typeof PROFILE.businessLines, impacts: EnterpriseInternalImpact[]): string[] {
+  const drivers = [
+    `${TAG_LABELS[tag]} directly tagged by the event`,
+    `${lines.length} business line(s) exposed: ${lines.map(line => line.name).join(' / ') || 'profile baseline'}`,
+  ];
+  const departments = unique(impacts.map(impact => impact.department));
+  if (departments.length) drivers.push(`Mapped departments: ${departments.join(' / ')}`);
+  if (event.impactPath?.label) drivers.push(`Route path: ${event.impactPath.label}`);
+  return drivers.slice(0, 4);
+}
+
+function roiTemplateForEvent(event: EnterpriseRiskEvent, tag: EnterpriseRiskTag): EnterpriseRoiTemplate {
+  return tag;
+}
+
+function templateMatchesTag(template: EnterpriseRoiTemplate, tag: EnterpriseRiskTag): boolean {
+  return template === tag;
+}
+
+function roiAssumption(
+  key: string,
+  label: string,
+  value: number,
+  unit: EnterpriseRoiAssumptionLine['unit'],
+  source: string,
+  confidence: number,
+  low?: number,
+  high?: number,
+  sourceUrl?: string,
+  locked = false,
+): EnterpriseRoiAssumptionLine {
+  return {
+    key,
+    label,
+    value: Number.isFinite(value) ? value : 0,
+    low: Number.isFinite(low) ? low : undefined,
+    high: Number.isFinite(high) ? high : undefined,
+    unit,
+    source,
+    sourceUrl,
+    confidence: clampNumber(confidence, 0, 1),
+    locked,
+  };
+}
+
+function readRoiAssumption(
+  pack: EnterpriseRoiAssumptionPack,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const value = pack.assumptions.find(item => item.key === key)?.value ?? fallback;
+  return clampNumber(value, min, max);
+}
+
+function roiUnitForKey(key: string, fallback: EnterpriseRoiAssumptionLine['unit']): EnterpriseRoiAssumptionLine['unit'] {
+  if (key === 'exposureBaseUsd' || key === 'annualSystemCostUsd') return 'usd';
+  if (key === 'eventProbability' || key === 'detectionHitRate') return 'probability';
+  if (key === 'lossGivenEventPct' || key === 'mitigationEffectiveness' || key === 'costSharePct') return 'percentage';
+  return fallback;
+}
+
+function normalizeRoiLineValue(value: number, unit: EnterpriseRoiAssumptionLine['unit']): number {
+  if (unit === 'probability' || unit === 'percentage') return clampNumber(value > 1 ? value / 100 : value, 0, 1);
+  if (unit === 'usd' || unit === 'usd_per_day') return clampNumber(value, 0, 100_000_000);
+  return clampNumber(value, 0, 1_000_000);
+}
+
+function calibratedRoiLineConfidence(key: string, packConfidence: number): number {
+  const factorByKey: Record<string, number> = {
+    exposureBaseUsd: 1,
+    eventProbability: 0.84,
+    lossGivenEventPct: 0.8,
+    detectionHitRate: 0.76,
+    mitigationEffectiveness: 0.74,
+    annualSystemCostUsd: 0.92,
+    costSharePct: 1,
+  };
+  return clampNumber(packConfidence * (factorByKey[key] ?? 0.82), 0.35, 0.95);
+}
+
+function deterministicRoiAssumptionPack(
+  event: EnterpriseRiskEvent,
+  tag: EnterpriseRiskTag,
+  lines: typeof PROFILE.businessLines,
+  costSharePct: number,
+): EnterpriseRoiAssumptionPack {
+  const template = roiTemplateForEvent(event, tag);
+  const lineRevenue = lines.reduce((sum, line) => sum + line.revenueAtRiskUsd, 0);
+  const severity = clampNumber(event.severityScore / 100, 0.2, 0.95);
+  const statusHint = event.priority === 'P1' ? 1.12 : event.priority === 'P2' ? 1 : 0.82;
+
+  let exposureBaseUsd = Math.round(lineRevenue * 0.1 * severity * statusHint);
+  let eventProbability = 0.26;
+  let detectionHitRate = 0.58;
+  let mitigationEffectiveness = 0.38;
+  const lossGivenEventPct = 1;
+  let annualSystemCostUsd = 62_000;
+  const rationale = [
+    'FAIR-lite: exposure magnitude x event frequency x residual-control effect.',
+    'Qwen supplies assumptions when available; calculation remains deterministic.',
+  ];
+
+  if (template === 'regulatory') {
+    exposureBaseUsd = Math.round(clampNumber(lineRevenue * 0.12, 650_000, 3_100_000) * severity * 1.08);
+    eventProbability = 0.3;
+    detectionHitRate = 0.8;
+    mitigationEffectiveness = 0.6;
+    annualSystemCostUsd = 58_000;
+    rationale.push('Regulatory ROI maps CBAM/tariff/compliance exposure to audit probability, warning hit rate, and loss reduction.');
+  } else if (template === 'supply_chain') {
+    const dailyMarginAtRisk = (lineRevenue / 365) * 0.18;
+    const delayDays = event.priority === 'P1' ? 18 : event.priority === 'P2' ? 10 : 6;
+    exposureBaseUsd = Math.round(dailyMarginAtRisk * delayDays + lineRevenue * 0.012 * severity);
+    eventProbability = clampNumber(0.26 + severity * 0.18, 0.12, 0.58);
+    detectionHitRate = 0.68;
+    mitigationEffectiveness = 0.46;
+    annualSystemCostUsd = 72_000;
+    rationale.push('Supply-chain ROI estimates margin-at-risk over delay days plus route premium.');
+  } else if (template === 'financial_fx') {
+    exposureBaseUsd = Math.round(lineRevenue * 0.06 * 0.55 * severity);
+    eventProbability = clampNumber(0.34 + severity * 0.16, 0.16, 0.62);
+    detectionHitRate = 0.64;
+    mitigationEffectiveness = 0.36;
+    annualSystemCostUsd = 42_000;
+    rationale.push('Financial/FX ROI uses revenue-at-risk times volatility and margin pass-through.');
+  } else if (template === 'geopolitical') {
+    exposureBaseUsd = Math.round(lineRevenue * 0.085 * severity);
+    eventProbability = clampNumber(0.18 + severity * 0.14, 0.08, 0.45);
+    detectionHitRate = 0.56;
+    mitigationEffectiveness = 0.32;
+    annualSystemCostUsd = 76_000;
+    rationale.push('Geopolitical ROI treats conflict, sanctions, and chokepoint disruption as frequency x operational loss magnitude.');
+  }
+
+  return {
+    eventId: event.id,
+    template,
+    version: ENTERPRISE_ROI_MODEL_VERSION,
+    generatedBy: 'deterministic',
+    confidence: event.isDemoSeed ? 0.62 : 0.54,
+    assumptions: [
+      roiAssumption('exposureBaseUsd', 'Exposure magnitude', exposureBaseUsd, 'usd', 'Business-line revenue and event template', 0.62, Math.round(exposureBaseUsd * 0.62), Math.round(exposureBaseUsd * 1.38), ROI_SOURCE_URLS.openFair),
+      roiAssumption('eventProbability', 'Annual event probability', eventProbability, 'probability', 'NIST likelihood calibrated by priority and severity', 0.58, Math.max(0.03, eventProbability * 0.65), Math.min(0.9, eventProbability * 1.35), ROI_SOURCE_URLS.nist),
+      roiAssumption('lossGivenEventPct', 'Loss realization', lossGivenEventPct, 'percentage', 'FAIR loss magnitude normalization', 0.56, 0.7, 1, ROI_SOURCE_URLS.openFair),
+      roiAssumption('detectionHitRate', 'Early-warning hit rate', detectionHitRate, 'probability', 'Historical alert coverage / benchmark fallback', 0.52, detectionHitRate * 0.75, Math.min(0.95, detectionHitRate * 1.15), ROI_SOURCE_URLS.iso31010),
+      roiAssumption('mitigationEffectiveness', 'Loss reduction if hit', mitigationEffectiveness, 'percentage', 'Control effectiveness benchmark fallback', 0.52, mitigationEffectiveness * 0.7, Math.min(0.85, mitigationEffectiveness * 1.25), ROI_SOURCE_URLS.nist),
+      roiAssumption('annualSystemCostUsd', 'Annual system cost', annualSystemCostUsd, 'usd', 'WorldMonitor deployment cost assumption', 0.6, annualSystemCostUsd * 0.78, annualSystemCostUsd * 1.32, undefined, true),
+      roiAssumption('costSharePct', 'Scenario cost share', costSharePct, 'percentage', 'Shared platform cost allocated across triggered risk axes', 0.8, costSharePct, costSharePct, undefined, true),
+    ],
+    rationale,
+    references: ROI_TEMPLATE_REFERENCES[template],
+  };
+}
+
+function sanitizeRoiAssumptionPack(
+  pack: EnterpriseRoiAssumptionPack | undefined,
+  event: EnterpriseRiskEvent,
+  tag: EnterpriseRiskTag,
+): EnterpriseRoiAssumptionPack | undefined {
+  if (!pack || pack.eventId !== event.id || !templateMatchesTag(pack.template, tag)) return undefined;
+  const allowedKeys = new Set(['exposureBaseUsd', 'eventProbability', 'lossGivenEventPct', 'detectionHitRate', 'mitigationEffectiveness', 'annualSystemCostUsd', 'costSharePct']);
+  const rawAssumptions = pack.assumptions
+    .filter(item => allowedKeys.has(item.key) && Number.isFinite(item.value))
+    .slice(0, 8);
+  const packConfidence = clampNumber(pack.confidence, 0, 1);
+  const confidenceBuckets = new Set(rawAssumptions.map(item => Math.round(clampNumber(item.confidence, 0, 1) * 100)));
+  const shouldCalibrateConfidence = pack.generatedBy === 'qwen_agent' && confidenceBuckets.size <= 1;
+  const assumptions = rawAssumptions
+    .map(item => {
+      const unit = roiUnitForKey(item.key, item.unit);
+      return {
+        ...item,
+        unit,
+        value: normalizeRoiLineValue(item.value, unit),
+        low: item.low == null ? undefined : normalizeRoiLineValue(item.low, unit),
+        high: item.high == null ? undefined : normalizeRoiLineValue(item.high, unit),
+        confidence: shouldCalibrateConfidence
+          ? calibratedRoiLineConfidence(item.key, packConfidence)
+          : clampNumber(item.confidence, 0, 1),
+      };
+    });
+  if (!assumptions.some(item => item.key === 'exposureBaseUsd')) return undefined;
+  return {
+    ...pack,
+    version: pack.version || ENTERPRISE_ROI_MODEL_VERSION,
+    confidence: packConfidence,
+    assumptions,
+    rationale: pack.rationale.slice(0, 4),
+    references: pack.references.slice(0, 6),
+  };
+}
+
+function resolveRoiAssumptionPack(
+  event: EnterpriseRiskEvent,
+  tag: EnterpriseRiskTag,
+  lines: typeof PROFILE.businessLines,
+  costSharePct: number,
+  assumptions: EnterpriseRoiAssumptions,
+): EnterpriseRoiAssumptionPack {
+  const keyedPack = assumptions.roiAssumptionPacks?.[`${event.id}:${tag}`];
+  const legacyPack = assumptions.roiAssumptionPacks?.[event.id];
+  const provided = sanitizeRoiAssumptionPack(keyedPack ?? legacyPack, event, tag);
+  if (provided) {
+    const hasCostShare = provided.assumptions.some(item => item.key === 'costSharePct');
+    return hasCostShare
+      ? provided
+      : {
+        ...provided,
+        assumptions: [
+          ...provided.assumptions,
+          roiAssumption('costSharePct', 'Scenario cost share', costSharePct, 'percentage', 'Shared platform cost allocated across triggered risk axes', 0.8, costSharePct, costSharePct, undefined, true),
+        ],
+      };
+  }
+  return deterministicRoiAssumptionPack(event, tag, lines, costSharePct);
+}
+
+function buildEnterpriseRoiScenario(
+  event: EnterpriseRiskEvent,
+  tag: EnterpriseRiskTag,
+  impacts: EnterpriseInternalImpact[],
+  tasks: EnterpriseTask[],
+  assumptions: EnterpriseRoiAssumptions,
+  activeScenarioCount: number,
+): EnterpriseRoiScenario {
+  const triggered = event.tags.includes(tag);
+  const disabled = (assumptions.disabledTags?.includes(tag) ?? false) || !triggered;
+  const lines = businessLinesForRoiScenario(event, tag);
+  const relatedDepartments = ROI_DEPARTMENT_COVERAGE[tag];
+  const relatedImpacts = impacts.filter(impact => relatedDepartments.includes(impact.department));
+  const relatedTasks = tasks.filter(task => relatedDepartments.includes(task.department));
+  const costSharePct = activeScenarioCount > 0 ? 1 / activeScenarioCount : 1;
+  const pack = resolveRoiAssumptionPack(event, tag, lines, costSharePct, assumptions);
+  const mode = modeProfile(assumptions.mode);
+  const statusCoverage = taskStatusCoverageScore(relatedTasks);
+  const exposure = disabled ? 0 : Math.round(readRoiAssumption(pack, 'exposureBaseUsd', 0, 0, 100_000_000));
+  const annualProbability = disabled ? 0 : readRoiAssumption(pack, 'eventProbability', 0.22, 0, 0.95) * mode.probability;
+  const probability = annualizedProbability(annualProbability, assumptions.horizonDays);
+  const lossGivenEventPct = disabled ? 0 : readRoiAssumption(pack, 'lossGivenEventPct', 1, 0.05, 1);
+  const intensityControl = clampNumber(0.7 + assumptions.mitigationIntensity * 0.5, 0.72, 1.22);
+  const mappingCoverage = relatedImpacts.length ? 0.04 : 0;
+  const detectionHitRate = disabled
+    ? 0
+    : clampNumber(readRoiAssumption(pack, 'detectionHitRate', 0.55, 0, 0.98) * mode.control * intensityControl + statusCoverage * 0.04, 0, 0.98);
+  const mitigationEffectiveness = disabled
+    ? 0
+    : clampNumber(readRoiAssumption(pack, 'mitigationEffectiveness', 0.35, 0, 0.9) * mode.control * intensityControl + mappingCoverage, 0, 0.9);
+  const preventable = clampNumber(detectionHitRate * mitigationEffectiveness, 0, 0.82);
+  const baselineLoss = Math.round(exposure * probability * lossGivenEventPct);
+  const expectedLoss = baselineLoss;
+  const expectedSaving = Math.round(baselineLoss * preventable);
+  const residualLoss = Math.max(0, baselineLoss - expectedSaving);
+  const annualSystemCost = readRoiAssumption(pack, 'annualSystemCostUsd', 60_000, 0, 5_000_000);
+  const sharedCost = readRoiAssumption(pack, 'costSharePct', costSharePct, 0, 1);
+  const mitigationCost = disabled
+    ? 0
+    // Platform cost is treated as an annual committed cost; prorating by 90/365 overstated short-window ROI.
+    : Math.round(annualSystemCost * sharedCost * mode.cost * clampNumber(0.7 + assumptions.mitigationIntensity * 0.5, 0.75, 1.2));
+  const netSaving = expectedSaving - mitigationCost;
+  const roiPct = mitigationCost > 0 ? Math.round((netSaving / mitigationCost) * 100) : 0;
+  const departments = unique([...relatedDepartments, ...relatedImpacts.map(impact => impact.department)]).slice(0, 3);
+  return {
+    tag,
+    label: TAG_LABELS[tag],
+    template: pack.template,
+    active: triggered && !disabled,
+    triggered,
+    probabilityPct: Math.round(clampNumber(probability, 0, 0.95) * 100),
+    grossExposureUsd: exposure,
+    baselineLossUsd: baselineLoss,
+    residualLossUsd: residualLoss,
+    expectedLossUsd: expectedLoss,
+    preventablePct: Math.round(preventable * 100),
+    expectedSavingUsd: expectedSaving,
+    mitigationCostUsd: mitigationCost,
+    netSavingUsd: netSaving,
+    roiPct,
+    confidence: event.isDemoSeed ? 'demo_estimate' : 'modeled',
+    drivers: roiDrivers(event, tag, lines, relatedImpacts),
+    departments,
+    assumptionPack: pack,
+  };
+}
+
+export function isEnterpriseRiskRoiEnabledForEvent(event: EnterpriseRiskEvent): boolean {
+  if (ENTERPRISE_RISK_ROI_CALCULATION_SCOPE === 'all_events') return true;
+  return event.id === ENTERPRISE_RISK_FIRST_DEMO_EVENT_ID;
+}
+
+export function enterpriseRiskRoiTagsForEvent(event: EnterpriseRiskEvent): EnterpriseRiskTag[] {
+  if (!isEnterpriseRiskRoiEnabledForEvent(event)) return [];
+  return ENTERPRISE_ROI_RISK_ORDER.filter(tag => event.tags.includes(tag));
+}
+
+export function buildEnterpriseRoiSimulation(
+  event: EnterpriseRiskEvent,
+  impacts: EnterpriseInternalImpact[],
+  tasks: EnterpriseTask[],
+  assumptions?: Partial<EnterpriseRoiAssumptions>,
+): EnterpriseRoiSimulation {
+  const normalizedAssumptions = normalizeRoiAssumptions(assumptions);
+  const roiEnabled = isEnterpriseRiskRoiEnabledForEvent(event);
+  const triggeredTags = ENTERPRISE_ROI_RISK_ORDER.filter(tag => event.tags.includes(tag));
+  const effectiveTriggeredTags = roiEnabled ? enterpriseRiskRoiTagsForEvent(event) : [];
+  const activeScenarioCount = effectiveTriggeredTags.filter(tag => !normalizedAssumptions.disabledTags?.includes(tag)).length || 1;
+  const scenarioEvent = roiEnabled ? { ...event, tags: effectiveTriggeredTags.length ? effectiveTriggeredTags : triggeredTags } : { ...event, tags: [] };
+  const scenarios = ENTERPRISE_ROI_RISK_ORDER.map(tag => buildEnterpriseRoiScenario(
+    scenarioEvent,
+    tag,
+    impacts.filter(impact => impact.eventId === event.id),
+    tasks.filter(task => task.sourceEventId === event.id),
+    normalizedAssumptions,
+    activeScenarioCount,
+  ));
+  const assumptionPacks = scenarios
+    .filter(scenario => scenario.active)
+    .map(scenario => scenario.assumptionPack);
+  const totalExposureUsd = scenarios.reduce((sum, scenario) => sum + scenario.grossExposureUsd, 0);
+  const expectedLossUsd = scenarios.reduce((sum, scenario) => sum + scenario.expectedLossUsd, 0);
+  const rawExpectedSavingUsd = scenarios.reduce((sum, scenario) => sum + scenario.expectedSavingUsd, 0);
+  const mitigationCostUsd = scenarios.reduce((sum, scenario) => sum + scenario.mitigationCostUsd, 0);
+  const expectedSavingUsd = Math.round(rawExpectedSavingUsd * (1 - normalizedAssumptions.correlationHaircutPct / 100));
+  const netSavingUsd = expectedSavingUsd - mitigationCostUsd;
+  const compositeRoiPct = mitigationCostUsd > 0 ? Math.round((netSavingUsd / mitigationCostUsd) * 100) : 0;
+  return {
+    eventId: event.id,
+    totalExposureUsd,
+    expectedLossUsd,
+    expectedSavingUsd,
+    mitigationCostUsd,
+    netSavingUsd,
+    compositeRoiPct,
+    scenarioCount: scenarios.filter(scenario => scenario.active).length,
+    scenarios,
+    assumptionPacks,
+    modelVersion: ENTERPRISE_ROI_MODEL_VERSION,
+  };
+}
+
+function buildEnterpriseRoiPortfolio(
+  events: EnterpriseRiskEvent[],
+  impacts: EnterpriseInternalImpact[],
+  tasks: EnterpriseTask[],
+  assumptions?: Partial<EnterpriseRoiAssumptions>,
+): EnterpriseRoiSimulation {
+  const roiEvents = events.filter(isEnterpriseRiskRoiEnabledForEvent);
+  const sims = (roiEvents.length ? roiEvents : events.slice(0, 1))
+    .map(event => buildEnterpriseRoiSimulation(event, impacts, tasks, assumptions));
+  const scenarios = sims.flatMap(sim => sim.scenarios);
+  const totalExposureUsd = sims.reduce((sum, sim) => sum + sim.totalExposureUsd, 0);
+  const expectedLossUsd = sims.reduce((sum, sim) => sum + sim.expectedLossUsd, 0);
+  const expectedSavingUsd = sims.reduce((sum, sim) => sum + sim.expectedSavingUsd, 0);
+  const mitigationCostUsd = sims.reduce((sum, sim) => sum + sim.mitigationCostUsd, 0);
+  const netSavingUsd = expectedSavingUsd - mitigationCostUsd;
+  const compositeRoiPct = mitigationCostUsd > 0 ? Math.round((netSavingUsd / mitigationCostUsd) * 100) : 0;
+  const assumptionPacks = sims.flatMap(sim => sim.assumptionPacks);
+  return {
+    eventId: events[0]?.id ?? 'portfolio',
+    totalExposureUsd,
+    expectedLossUsd,
+    expectedSavingUsd,
+    mitigationCostUsd,
+    netSavingUsd,
+    compositeRoiPct,
+    scenarioCount: scenarios.filter(scenario => scenario.active).length,
+    scenarios,
+    assumptionPacks,
+    modelVersion: ENTERPRISE_ROI_MODEL_VERSION,
+  };
+}
+
 function estimateExposure(events: EnterpriseRiskEvent[]): number {
   const lineIds = new Set<string>();
   for (const event of events.slice(0, 4)) {
@@ -1569,7 +2124,8 @@ function buildReport(
   const lead = events[0] ?? DEMO_EVENTS[0]!;
   const departments = unique(impacts.slice(0, 8).map(impact => impact.department));
   const businessLines = unique(impacts.map(impact => impact.businessLineName)).slice(0, 3);
-  const exposure = estimateExposure(events);
+  const roiSimulation = buildEnterpriseRoiPortfolio(events, impacts, tasks);
+  const exposure = roiSimulation.totalExposureUsd || estimateExposure(events);
   const recommendations = tasks.slice(0, 5).map(task => task.title);
   return {
     id: `report-${stableHash(`${lead.id}|${Date.now()}`)}`,
@@ -1579,7 +2135,15 @@ function buildReport(
     recommendedActions: recommendations.length ? recommendations : ['Maintain monitoring and review business-line exposure after the next refresh.'],
     financialImpact: {
       exposureUsd: exposure,
-      estimate: `Estimated short-term revenue/cost exposure: ${formatUsd(exposure)}.`, 
+      expectedLossUsd: roiSimulation.expectedLossUsd,
+      expectedSavingUsd: roiSimulation.expectedSavingUsd,
+      mitigationCostUsd: roiSimulation.mitigationCostUsd,
+      netSavingUsd: roiSimulation.netSavingUsd,
+      compositeRoiPct: roiSimulation.compositeRoiPct,
+      scenarios: roiSimulation.scenarios,
+      simulation: roiSimulation,
+      assumptionPacks: roiSimulation.assumptionPacks,
+      estimate: `Modeled ROI sandbox: ${formatUsd(roiSimulation.expectedSavingUsd)} expected savings against ${formatUsd(roiSimulation.mitigationCostUsd)} mitigation cost; composite ROI ${roiSimulation.compositeRoiPct}%.`,
       confidence: events.some(event => event.isDemoSeed) ? 'demo_estimate' : 'modeled',
     },
   };
@@ -1677,9 +2241,8 @@ function buildConcreteAgentImpactPath(
   event: EnterpriseRiskEvent,
   transmission: EnterpriseRiskAgentTransmission,
 ): EnterpriseRiskEvent['impactPath'] | undefined {
-  const routeIds = transmission.impactPath.routeIds.length
-    ? transmission.impactPath.routeIds
-    : (event.impactPath?.routeIds ?? []);
+  const eventRouteIds = event.impactPath?.routeIds ?? [];
+  const routeIds = eventRouteIds.length ? eventRouteIds : transmission.impactPath.routeIds;
   if (transmission.impactPath.steps.length && !isGenericAgentImpactPath(transmission.impactPath)) {
     return {
       ...transmission.impactPath,
@@ -1910,6 +2473,7 @@ export function buildEnterpriseRiskAssessment(inputs: EnterpriseRiskInputs): Ent
       'Rule layer has generated candidate events; waiting for Qwen identification and transmission agents to override.',
       0,
     ),
+    roiAssumptionPacks: {},
     reusedCapabilities: [
       'RSS / Breaking News',
       'ML clustering',
@@ -1921,7 +2485,7 @@ export function buildEnterpriseRiskAssessment(inputs: EnterpriseRiskInputs): Ent
     ],
     gaps: [
       'Map jump uses feed coordinates or explicit place matches only; no country or market-level fallback targeting.',
-      'Financial exposure is a POC estimate based on business-line revenue and event severity; real ERP ledger data is not connected yet.',
+      'ROI uses FAIR-lite templates and optional Qwen assumption packs; real ERP ledger data is not connected yet.',
       'Task status and alert acknowledgement are persisted locally in the browser; production workflow approvals are not connected yet.',
     ],
   };
@@ -1943,6 +2507,29 @@ export function markEnterpriseRiskAgentFallback(assessment: EnterpriseRiskAssess
   return {
     ...assessment,
     agentWorkflow: agentStatus('fallback', detail, 0, assessment.agentWorkflow.model),
+  };
+}
+
+export function applyEnterpriseRiskRoiAssumptionPack(
+  assessment: EnterpriseRiskAssessment,
+  pack: EnterpriseRoiAssumptionPack,
+): EnterpriseRiskAssessment {
+  if (!assessment.events.some(event => event.id === pack.eventId)) return assessment;
+  const key = `${pack.eventId}:${pack.template}`;
+  return {
+    ...assessment,
+    roiAssumptionPacks: {
+      ...(assessment.roiAssumptionPacks ?? {}),
+      [key]: pack,
+    },
+    reusedCapabilities: unique([
+      'Qwen ROI assumption agent',
+      ...assessment.reusedCapabilities,
+    ]),
+    gaps: [
+      'Qwen ROI assumptions are used as bounded inputs only; deterministic FAIR-lite calculator owns final values.',
+      ...assessment.gaps.filter(gap => !gap.includes('Qwen ROI assumptions')),
+    ],
   };
 }
 

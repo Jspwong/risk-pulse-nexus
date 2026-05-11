@@ -218,4 +218,82 @@ describe('enterprise risk live appendix selection', () => {
     assert.equal(liveTitles.length, 4);
     assert.equal(liveTitles.some(title => /Britannica|World Trade Organization/i.test(title)), false);
   });
+
+  it('uses clustered article snippets so generic cluster titles do not hide real route shocks', () => {
+    const inputs: EnterpriseRiskInputs = {
+      news: [
+        news('EU CBAM embedded emissions audit deadline raises customs risk for aluminum battery tray exporters'),
+        news('Red Sea Suez container reroute delays battery tray exports to Rotterdam'),
+        news('Vietnam dong VND exchange rate move squeezes Ho Chi Minh suppliers export margin'),
+      ],
+      clusters: [{
+        ...cluster('Companies brace after latest security talks', 'Global Wire'),
+        allItems: [
+          news(
+            'Companies brace after latest security talks',
+            'Iran warned over maritime security in the Strait of Hormuz, raising freight fuel surcharge risk for Asia-Europe container exports.',
+          ),
+        ],
+      }],
+    };
+
+    const assessment = buildEnterpriseRiskAssessment(inputs);
+    const liveTitles = assessment.events
+      .filter(event => !event.isDemoSeed)
+      .map(event => event.title);
+
+    assert.ok(liveTitles.some(title => /security talks/i.test(title)));
+  });
+
+  it('does not reserve a slot for a weak Southeast Asia headline when stronger axes are available', () => {
+    const inputs: EnterpriseRiskInputs = {
+      news: [
+        news('EU CBAM embedded emissions audit deadline raises customs risk for aluminum battery tray exporters'),
+        news('Red Sea Suez container reroute delays battery tray exports to Rotterdam'),
+        news('Strait of Hormuz attack raises freight fuel surcharge for Asia-Europe container exports'),
+        news('European battery regulation traceability audit affects aluminum EV battery enclosure customs filings'),
+        news(
+          'Bangkok port tourism logistics delay hits regional holiday transfers',
+          'Thailand tourism and airport transfers face a delay during the regional holiday period.',
+        ),
+      ],
+      clusters: [],
+    };
+
+    const assessment = buildEnterpriseRiskAssessment(inputs);
+    const liveTitles = assessment.events
+      .filter(event => !event.isDemoSeed)
+      .map(event => event.title);
+
+    assert.equal(liveTitles.length, 4);
+    assert.equal(liveTitles.some(title => /tourism logistics/i.test(title)), false);
+  });
+
+  it('rejects macro commodity and inflation headlines without direct enterprise transmission', () => {
+    const inputs: EnterpriseRiskInputs = {
+      news: [
+        news('EU CBAM embedded emissions audit deadline raises customs risk for aluminum battery tray exporters'),
+        news('Red Sea Suez container reroute delays battery tray exports to Rotterdam'),
+        news('Strait of Hormuz attack raises freight fuel surcharge for Asia-Europe container exports'),
+        news('Vietnam dong VND exchange rate move squeezes Ho Chi Minh suppliers export margin'),
+      ],
+      clusters: [
+        cluster('China energy imports drop in April amid Iran war as fuel exports hit decade low - Reuters', 'Reuters Energy'),
+        cluster('Gold slips as war uncertainty clouds interest rate outlook - Reuters', 'Reuters US'),
+        cluster('Indonesia delays plan to impose higher royalties, export duties on minerals - Reuters', 'Reuters Indonesia'),
+        cluster("China's factory inflation hits 45-month high on energy price shock - Reuters", 'Reuters China'),
+      ],
+    };
+
+    const assessment = buildEnterpriseRiskAssessment(inputs);
+    const liveTitles = assessment.events
+      .filter(event => !event.isDemoSeed)
+      .map(event => event.title);
+
+    assert.equal(liveTitles.length, 4);
+    assert.equal(liveTitles.some(title => /energy imports drop/i.test(title)), false);
+    assert.equal(liveTitles.some(title => /Gold slips/i.test(title)), false);
+    assert.equal(liveTitles.some(title => /royalties.*minerals/i.test(title)), false);
+    assert.equal(liveTitles.some(title => /factory inflation/i.test(title)), false);
+  });
 });

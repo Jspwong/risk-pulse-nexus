@@ -16,6 +16,50 @@ export type EnterpriseRiskPriority = 'P1' | 'P2' | 'P3';
 export type EnterpriseTaskStatus = 'open' | 'in_progress' | 'watching' | 'done';
 export type EnterpriseDepartment = 'Compliance' | 'Finance' | 'Supply Chain' | 'Sales' | 'Operations';
 export type EnterpriseRiskAgentLayerSource = 'qwen_agent' | 'rule_fallback';
+export type EnterpriseRoiMode = 'base' | 'stress';
+export type EnterpriseRoiTemplate = EnterpriseRiskTag;
+export type EnterpriseRoiAssumptionUnit =
+  | 'usd'
+  | 'probability'
+  | 'percentage'
+  | 'days'
+  | 'count'
+  | 'tonnes_co2e'
+  | 'usd_per_day'
+  | 'multiple';
+
+export interface EnterpriseRoiAssumptionLine {
+  key: string;
+  label: string;
+  value: number;
+  low?: number;
+  high?: number;
+  unit: EnterpriseRoiAssumptionUnit;
+  source: string;
+  sourceUrl?: string;
+  confidence: number;
+  locked?: boolean;
+}
+
+export interface EnterpriseRoiAssumptionPack {
+  eventId: string;
+  template: EnterpriseRoiTemplate;
+  version: string;
+  generatedBy: 'deterministic' | 'qwen_agent';
+  confidence: number;
+  assumptions: EnterpriseRoiAssumptionLine[];
+  rationale: string[];
+  references: string[];
+}
+
+export interface EnterpriseRoiAssumptions {
+  mode: EnterpriseRoiMode;
+  horizonDays: 90 | 365;
+  mitigationIntensity: number;
+  correlationHaircutPct: number;
+  disabledTags?: EnterpriseRiskTag[];
+  roiAssumptionPacks?: Record<string, EnterpriseRoiAssumptionPack>;
+}
 
 export interface EnterpriseBusinessLine {
   id: string;
@@ -132,6 +176,42 @@ export interface EnterpriseTask {
   source?: EnterpriseRiskAgentLayerSource;
 }
 
+export interface EnterpriseRoiScenario {
+  tag: EnterpriseRiskTag;
+  label: string;
+  template: EnterpriseRoiTemplate;
+  active: boolean;
+  triggered: boolean;
+  probabilityPct: number;
+  grossExposureUsd: number;
+  baselineLossUsd: number;
+  residualLossUsd: number;
+  expectedLossUsd: number;
+  preventablePct: number;
+  expectedSavingUsd: number;
+  mitigationCostUsd: number;
+  netSavingUsd: number;
+  roiPct: number;
+  confidence: 'demo_estimate' | 'modeled';
+  drivers: string[];
+  departments: EnterpriseDepartment[];
+  assumptionPack: EnterpriseRoiAssumptionPack;
+}
+
+export interface EnterpriseRoiSimulation {
+  eventId: string;
+  totalExposureUsd: number;
+  expectedLossUsd: number;
+  expectedSavingUsd: number;
+  mitigationCostUsd: number;
+  netSavingUsd: number;
+  compositeRoiPct: number;
+  scenarioCount: number;
+  scenarios: EnterpriseRoiScenario[];
+  assumptionPacks: EnterpriseRoiAssumptionPack[];
+  modelVersion: string;
+}
+
 export interface EnterpriseReportSummary {
   id: string;
   generatedAt: number;
@@ -140,6 +220,14 @@ export interface EnterpriseReportSummary {
   recommendedActions: string[];
   financialImpact: {
     exposureUsd: number;
+    expectedLossUsd: number;
+    expectedSavingUsd: number;
+    mitigationCostUsd: number;
+    netSavingUsd: number;
+    compositeRoiPct: number;
+    scenarios: EnterpriseRoiScenario[];
+    simulation: EnterpriseRoiSimulation;
+    assumptionPacks: EnterpriseRoiAssumptionPack[];
     estimate: string;
     confidence: 'demo_estimate' | 'modeled';
   };
@@ -174,6 +262,7 @@ export interface EnterpriseRiskAssessment {
     detail: string;
     updatedAt?: number;
   };
+  roiAssumptionPacks?: Record<string, EnterpriseRoiAssumptionPack>;
   reusedCapabilities: string[];
   gaps: string[];
 }

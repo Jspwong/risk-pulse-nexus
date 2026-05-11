@@ -50,14 +50,16 @@ export function renderEnterpriseRiskEvent(event: EnterpriseRiskEvent, selectedEv
   const mapHint = hasReliableEnterpriseRiskMapTarget(event) ? `<div class="er-map-hint">Map target: ${escapeHtml(event.location!.label)}</div>` : '';
   const agentBadge = event.agent?.identificationSource === 'qwen_agent'
     ? `<span class="er-agent-badge">Qwen refined${event.agent.confidence != null ? ` - ${(event.agent.confidence * 100).toFixed(0)}%` : ''}</span>`
-    : '<span class="er-agent-badge er-agent-fallback">rule fallback</span>';
+    : '<span class="er-agent-badge er-agent-fallback">Rule fallback</span>';
   return `
     <article class="er-event er-card-priority-${enterpriseRiskPriorityClass(event.priority)}${isSelected ? ' er-selected' : ''}" data-er-event-id="${escapeHtml(event.id)}" role="button" tabindex="0">
       <div class="er-row-top">
-        <span class="er-priority ${enterpriseRiskPriorityClass(event.priority)}">${enterpriseRiskPriorityLabel(event.priority)}</span>
+        <div class="er-row-badges">
+          <span class="er-priority ${enterpriseRiskPriorityClass(event.priority)}">${enterpriseRiskPriorityLabel(event.priority)}</span>
+          ${agentBadge}
+        </div>
         <span class="er-age">${isSelected ? 'selected' : escapeHtml(enterpriseRiskRelativeAge(event.occurredAt))}</span>
       </div>
-      ${agentBadge}
       <div class="er-event-title">${escapeHtml(event.title)}</div>
       <div class="er-event-summary">${escapeHtml(event.summary)}</div>
       <div class="er-tags">${tags}</div>

@@ -118,12 +118,17 @@ import { fetchSecurityAdvisories } from '@/services/security-advisories';
 import { fetchThermalEscalations } from '@/services/thermal-escalation';
 import { fetchCrossSourceSignals } from '@/services/cross-source-signals';
 import {
+  ENTERPRISE_RISK_FIRST_DEMO_EVENT_ID,
+  ENTERPRISE_RISK_ROI_CALCULATION_SCOPE,
   applyEnterpriseRiskAgentResult,
+  applyEnterpriseRiskRoiAssumptionPack,
   buildEnterpriseRiskAssessment,
+  enterpriseRiskRoiTagsForEvent,
   markEnterpriseRiskAgentFallback,
   markEnterpriseRiskAgentRunning,
 } from '@/services/enterprise-risk';
-import { fetchEnterpriseRiskAgentBatch } from '@/services/enterprise-risk-agent-client';
+import { fetchEnterpriseRiskAgentBatch, fetchEnterpriseRiskRoiAssumptions } from '@/services/enterprise-risk-agent-client';
+import type { EnterpriseRiskEvent, EnterpriseRiskTag } from '@/types/enterprise-risk';
 import { fetchTelegramFeed } from '@/services/telegram-intel';
 import { fetchOrefAlerts, startOrefPolling, stopOrefPolling, onOrefAlertsUpdate } from '@/services/oref-alerts';
 import { getResilienceRanking } from '@/services/resilience';
@@ -243,6 +248,25 @@ const ENTERPRISE_RISK_FAST_NEWS_CATEGORIES = new Set([
   'markets',
   'fin-regulation',
 ]);
+
+const ENTERPRISE_RISK_ROI_REQUEST_CONCURRENCY = 3;
+const ENTERPRISE_RISK_ROI_REQUEST_RETRIES = 1;
+
+function selectEnterpriseRiskRoiAssumptionEvents(events: EnterpriseRiskEvent[]): EnterpriseRiskEvent[] {
+  if (ENTERPRISE_RISK_ROI_CALCULATION_SCOPE === 'all_events') {
+    return events.filter(event => enterpriseRiskRoiTagsForEvent(event).length > 0);
+  }
+  const firstDemo = events.find(event => event.id === ENTERPRISE_RISK_FIRST_DEMO_EVENT_ID)
+    ?? events.find(event => event.isDemoSeed)
+    ?? events[0];
+  return firstDemo ? [firstDemo] : [];
+}
+
+function selectEnterpriseRiskRoiAssumptionTargets(events: EnterpriseRiskEvent[]): Array<{ event: EnterpriseRiskEvent; targetTemplate: EnterpriseRiskTag }> {
+  return selectEnterpriseRiskRoiAssumptionEvents(events).flatMap(event =>
+    enterpriseRiskRoiTagsForEvent(event).map(targetTemplate => ({ event, targetTemplate })),
+  );
+}
 
 function protoItemToNewsItem(p: ProtoNewsItem): NewsItem {
   const level = PROTO_TO_CLIENT_LEVEL[p.threat?.level ?? 'THREAT_LEVEL_UNSPECIFIED'];
@@ -3494,6 +3518,38 @@ export class DataLoaderManager implements AppModule {
         const agentAssessment = applyEnterpriseRiskAgentResult(runningAssessment, agentResult);
         panel?.setAssessment(agentAssessment);
         eventListPanel?.setAssessment(agentAssessment);
+        const roiTargets = selectEnterpriseRiskRoiAssumptionTargets(agentAssessment.events);
+        const fetchRoiTarget = async (target: typeof roiTargets[number]) => {
+          for (let attempt = 0; attempt <= ENTERPRISE_RISK_ROI_REQUEST_RETRIES; attempt += 1) {
+            const pack = await fetchEnterpriseRiskRoiAssumptions(agentAssessment, target.event, {
+              targetTemplate: target.targetTemplate,
+            });
+            if (pack) return pack;
+          }
+          return null;
+        };
+        const roiBatches: Array<typeof roiTargets> = [];
+        for (let index = 0; index < roiTargets.length; index += ENTERPRISE_RISK_ROI_REQUEST_CONCURRENCY) {
+          roiBatches.push(roiTargets.slice(index, index + ENTERPRISE_RISK_ROI_REQUEST_CONCURRENCY));
+        }
+        void (async () => {
+          const results: PromiseSettledResult<Awaited<ReturnType<typeof fetchRoiTarget>>>[] = [];
+          for (const batch of roiBatches) {
+            if (runId !== this.enterpriseRiskAgentRunId) return results;
+            results.push(...await Promise.allSettled(batch.map(fetchRoiTarget)));
+          }
+          return results;
+        })().then((results) => {
+          if (runId !== this.enterpriseRiskAgentRunId) return;
+          let roiAssessment = agentAssessment;
+          for (const result of results) {
+            if (result.status === 'fulfilled' && result.value) {
+              roiAssessment = applyEnterpriseRiskRoiAssumptionPack(roiAssessment, result.value);
+            }
+          }
+          panel?.setAssessment(roiAssessment);
+          eventListPanel?.setAssessment(roiAssessment);
+        });
       })
       .catch(() => {
         if (runId !== this.enterpriseRiskAgentRunId) return;

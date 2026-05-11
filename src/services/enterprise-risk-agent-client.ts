@@ -3,6 +3,7 @@ import type {
   EnterpriseRiskEvent,
   EnterpriseRiskPriority,
   EnterpriseRiskProfile,
+  EnterpriseRoiAssumptionPack,
   EnterpriseRiskTag,
   EnterpriseTask,
 } from '@/types/enterprise-risk';
@@ -70,6 +71,9 @@ function compactEvent(event: EnterpriseRiskEvent) {
     source: event.source,
     sourceType: event.sourceType,
     occurredAt: event.occurredAt,
+    tags: event.tags,
+    priority: event.priority,
+    severityScore: event.severityScore,
     countries: event.countries,
     affectedMarkets: event.affectedMarkets,
     link: event.link,
@@ -104,6 +108,7 @@ function requestCacheKey(assessment: EnterpriseRiskAssessment): string {
 }
 
 const agentResultCache = new Map<string, EnterpriseRiskAgentBatchResult>();
+const roiAssumptionCache = new Map<string, EnterpriseRoiAssumptionPack>();
 
 async function postEnterpriseRiskAgent(
   body: Record<string, unknown>,
@@ -164,6 +169,7 @@ async function fetchEnterpriseRiskAgentSingle(
       profile: compactProfile(assessment.profile),
       constraints: {
         allowedRiskTags: ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'],
+        maxRiskTagsPerEvent: 3,
         allowedPriorities: ['P1', 'P2', 'P3'],
         maxBusinessMappingsPerEvent: 6,
         maxResponseTasksPerEvent: 4,
@@ -208,6 +214,7 @@ export async function fetchEnterpriseRiskAgentBatch(
       profile: compactProfile(assessment.profile),
       constraints: {
         allowedRiskTags: ['geopolitical', 'regulatory', 'supply_chain', 'financial_fx'],
+        maxRiskTagsPerEvent: 3,
         allowedPriorities: ['P1', 'P2', 'P3'],
         maxBusinessMappingsPerEvent: 6,
         maxResponseTasksPerEvent: 4,
@@ -256,6 +263,86 @@ export async function fetchEnterpriseRiskAgentBatch(
     return result;
   } catch (error) {
     console.warn('[EnterpriseRiskAgent] request error', error);
+    return null;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function normalizeRoiAssumptionPayload(
+  payload: any,
+  event: EnterpriseRiskEvent,
+  targetTemplate?: EnterpriseRiskTag,
+): EnterpriseRoiAssumptionPack | null {
+  const result = payload?.result;
+  if (!result || result.eventId !== event.id || !Array.isArray(result.assumptions) || result.assumptions.length === 0) {
+    return null;
+  }
+  const unitByKey: Record<string, EnterpriseRoiAssumptionPack['assumptions'][number]['unit']> = {
+    exposureBaseUsd: 'usd',
+    eventProbability: 'probability',
+    lossGivenEventPct: 'percentage',
+    detectionHitRate: 'probability',
+    mitigationEffectiveness: 'percentage',
+    annualSystemCostUsd: 'usd',
+  };
+  const assumptions = result.assumptions.map((line: EnterpriseRoiAssumptionPack['assumptions'][number]) => {
+    const unit = unitByKey[line.key] ?? line.unit;
+    const value = (unit === 'probability' || unit === 'percentage') && line.value > 1
+      ? line.value / 100
+      : line.value;
+    return { ...line, unit, value };
+  });
+  return {
+    eventId: event.id,
+    template: targetTemplate ?? result.template,
+    version: typeof result.version === 'string' ? result.version : 'fair-lite-v1-qwen-assisted',
+    generatedBy: 'qwen_agent',
+    confidence: typeof result.confidence === 'number' ? result.confidence : 0.45,
+    assumptions,
+    rationale: Array.isArray(result.rationale) ? result.rationale : [],
+    references: Array.isArray(result.references) ? result.references : [],
+  };
+}
+
+export async function fetchEnterpriseRiskRoiAssumptions(
+  assessment: EnterpriseRiskAssessment,
+  event: EnterpriseRiskEvent,
+  options: { timeoutMs?: number; targetTemplate?: EnterpriseRiskTag } = {},
+): Promise<EnterpriseRoiAssumptionPack | null> {
+  const timeoutMs = options.timeoutMs ?? 24_000;
+  const targetTemplate = options.targetTemplate;
+  const cacheKey = `roi:${event.id}:${targetTemplate ?? 'auto'}:${event.title}:${event.summary.slice(0, 160)}:${assessment.profile.id}`;
+  const cached = roiAssumptionCache.get(cacheKey);
+  if (cached) return cached;
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const payload = await postEnterpriseRiskAgent({
+      mode: 'roi_assumptions',
+      event: compactEvent(event),
+      profile: compactProfile(assessment.profile),
+      constraints: {
+        allowedTemplates: ['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'],
+        targetTemplate,
+        requiredAssumptionKeys: ['exposureBaseUsd', 'eventProbability', 'lossGivenEventPct', 'detectionHitRate', 'mitigationEffectiveness', 'annualSystemCostUsd'],
+        doNotCalculateRoi: true,
+        maxAssumptions: 8,
+        maxRationaleItems: 4,
+        requireOnePackForEveryRequestedTag: true,
+        preserveEventIds: true,
+      },
+    }, controller.signal);
+    const pack = normalizeRoiAssumptionPayload(payload, event, targetTemplate);
+    if (!pack) {
+      console.warn('[EnterpriseRiskAgent] ROI assumption response invalid', { eventId: event.id, targetTemplate, payload });
+      return null;
+    }
+    roiAssumptionCache.set(cacheKey, pack);
+    return pack;
+  } catch (error) {
+    console.warn('[EnterpriseRiskAgent] ROI assumption request error', error);
     return null;
   } finally {
     window.clearTimeout(timeout);

@@ -964,17 +964,18 @@ export class EventHandlerManager implements AppModule {
     if (!el) return;
     const formatter = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'Asia/Shanghai',
-      weekday: 'short',
-      day: '2-digit',
-      month: 'short',
       year: 'numeric',
+      month: 'short',
+      day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
       hour12: false,
     });
     const tick = () => {
-      el.textContent = `${formatter.format(new Date()).replace(/,/g, '').toUpperCase()} BJT`;
+      const formatted = formatter.format(new Date());
+      // Format: "11 May 2026, 19:49:21" -> "11 May 2026 19:49:21"
+      el.textContent = formatted.replace(',', '');
     };
     tick();
     this.clockIntervalId = setInterval(tick, 1000);
