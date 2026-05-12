@@ -2,9 +2,9 @@ import type { EnterpriseRiskProfile } from '@/types/enterprise-risk';
 
 export const NEW_ENERGY_EXPORTER_PROFILE: EnterpriseRiskProfile = {
   id: 'longyuan-new-energy-components',
-  companyName: '龙远新能源零部件有限公司',
-  scenarioName: '新能源零部件出海风险闭环',
-  primaryNarrative: '中国新能源零部件企业向欧洲与东南亚交付电池托盘、铝压铸件和储能结构件。',
+  companyName: 'Longyuan New Energy Components Co., Ltd.',
+  scenarioName: 'New Energy Components Export Risk Closed Loop',
+  primaryNarrative: 'A China-based new energy components exporter delivering battery trays, aluminum die-cast parts, and energy storage structures to Europe and Southeast Asia.',
   targetMarkets: ['EU', 'Germany', 'Netherlands', 'Vietnam', 'Thailand', 'Indonesia'],
   exportSharePct: 68,
   criticalCertifications: ['CBAM embedded emissions', 'EU Battery Regulation', 'ISO 14064', 'IATF 16949', 'REACH/RoHS'],
@@ -18,7 +18,7 @@ export const NEW_ENERGY_EXPORTER_PROFILE: EnterpriseRiskProfile = {
   businessLines: [
     {
       id: 'battery-trays-eu',
-      name: '欧洲电池托盘出口线',
+      name: 'Europe Battery Tray Export Line',
       products: ['battery tray', 'aluminum casting', 'EV battery enclosure'],
       exportSharePct: 42,
       targetMarkets: ['EU', 'Germany', 'Netherlands'],
@@ -27,7 +27,7 @@ export const NEW_ENERGY_EXPORTER_PROFILE: EnterpriseRiskProfile = {
     },
     {
       id: 'storage-structures-sea',
-      name: '东南亚储能结构件供应线',
+      name: 'Southeast Asia Energy Storage Structures Supply Line',
       products: ['energy storage cabinet', 'sheet metal enclosure', 'BMS housing'],
       exportSharePct: 16,
       targetMarkets: ['Vietnam', 'Thailand', 'Indonesia'],
@@ -36,7 +36,7 @@ export const NEW_ENERGY_EXPORTER_PROFILE: EnterpriseRiskProfile = {
     },
     {
       id: 'cbam-compliance-program',
-      name: 'CBAM/碳数据合规项目',
+      name: 'CBAM / Carbon Data Compliance Program',
       products: ['embedded emissions data', 'supplier carbon factor', 'customs declaration'],
       exportSharePct: 10,
       targetMarkets: ['EU', 'Germany', 'Netherlands'],
@@ -46,6 +46,6 @@ export const NEW_ENERGY_EXPORTER_PROFILE: EnterpriseRiskProfile = {
   ],
   demoMode: {
     enabled: true,
-    label: 'Demo 主线固定保留，Live 外部事件以真实输入追加展示。',
+    label: 'Demo baseline remains pinned while live external events are appended from real inputs.',
   },
 };

@@ -45,7 +45,7 @@ const TAG_LABELS: Record<EnterpriseRiskTag, string> = {
 };
 
 export const ENTERPRISE_ROI_RISK_ORDER: EnterpriseRiskTag[] = ['regulatory', 'supply_chain', 'financial_fx', 'geopolitical'];
-export const ENTERPRISE_RISK_ROI_CALCULATION_SCOPE: 'first_demo_only' | 'all_events' = 'first_demo_only';
+export const ENTERPRISE_RISK_ROI_CALCULATION_SCOPE: 'first_demo_only' | 'all_events' = 'all_events';
 export const ENTERPRISE_RISK_FIRST_DEMO_EVENT_ID = 'demo-cbam-red-sea-001';
 
 export const DEFAULT_ENTERPRISE_ROI_ASSUMPTIONS: EnterpriseRoiAssumptions = {
