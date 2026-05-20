@@ -109,6 +109,9 @@ function requestCacheKey(assessment: EnterpriseRiskAssessment): string {
 
 const agentResultCache = new Map<string, EnterpriseRiskAgentBatchResult>();
 const roiAssumptionCache = new Map<string, EnterpriseRoiAssumptionPack>();
+const QWEN_AGENT_SINGLE_TIMEOUT_MS = 45_000;
+const QWEN_AGENT_BATCH_TIMEOUT_MS = 90_000;
+const QWEN_AGENT_ROI_TIMEOUT_MS = 60_000;
 
 async function postEnterpriseRiskAgent(
   body: Record<string, unknown>,
@@ -159,7 +162,7 @@ async function fetchEnterpriseRiskAgentSingle(
   event: EnterpriseRiskEvent,
   options: { timeoutMs?: number } = {},
 ): Promise<EnterpriseRiskAgentEventResult | null> {
-  const timeoutMs = options.timeoutMs ?? 14_000;
+  const timeoutMs = options.timeoutMs ?? QWEN_AGENT_SINGLE_TIMEOUT_MS;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -199,7 +202,7 @@ export async function fetchEnterpriseRiskAgentBatch(
   assessment: EnterpriseRiskAssessment,
   options: { timeoutMs?: number } = {},
 ): Promise<EnterpriseRiskAgentBatchResult | null> {
-  const timeoutMs = options.timeoutMs ?? 30_000;
+  const timeoutMs = options.timeoutMs ?? QWEN_AGENT_BATCH_TIMEOUT_MS;
   const requestedEvents = assessment.events.slice(0, 7);
   const cacheKey = requestCacheKey(assessment);
   const cached = agentResultCache.get(cacheKey);
@@ -310,7 +313,7 @@ export async function fetchEnterpriseRiskRoiAssumptions(
   event: EnterpriseRiskEvent,
   options: { timeoutMs?: number; targetTemplate?: EnterpriseRiskTag } = {},
 ): Promise<EnterpriseRoiAssumptionPack | null> {
-  const timeoutMs = options.timeoutMs ?? 24_000;
+  const timeoutMs = options.timeoutMs ?? QWEN_AGENT_ROI_TIMEOUT_MS;
   const targetTemplate = options.targetTemplate;
   const cacheKey = `roi:${event.id}:${targetTemplate ?? 'auto'}:${event.title}:${event.summary.slice(0, 160)}:${assessment.profile.id}`;
   const cached = roiAssumptionCache.get(cacheKey);

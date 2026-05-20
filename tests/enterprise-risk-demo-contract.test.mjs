@@ -109,7 +109,7 @@ describe('enterprise risk demo contract', () => {
     assert.match(api, /const MAX_RISK_TAGS = 3/);
     assert.match(api, /max 3/);
     assert.match(api, /slice\(0, MAX_RISK_TAGS\)/);
-    assert.match(api, /const QWEN_TIMEOUT_MS = 45_000/);
+    assert.match(api, /const QWEN_TIMEOUT_MS = 90_000/);
     assert.match(api, /mode === 'roi_assumptions' \? 3200/);
     assert.doesNotMatch(api, /VITE_(?:QWEN|DASHSCOPE)/);
 
@@ -139,7 +139,7 @@ describe('enterprise risk demo contract', () => {
     assert.match(loader, /ENTERPRISE_RISK_ROI_REQUEST_CONCURRENCY = 3/);
     assert.match(loader, /ENTERPRISE_RISK_ROI_REQUEST_RETRIES = 1/);
     assert.match(client, /maxRiskTagsPerEvent:\s*3/);
-    assert.match(client, /timeoutMs = options\.timeoutMs \?\? 24_000/);
+    assert.match(client, /const QWEN_AGENT_ROI_TIMEOUT_MS = 60_000/);
     assert.match(client, /requireOnePackForEveryRequestedTag:\s*true/);
     assert.match(panel, /Qwen Identification Agent/);
     assert.match(panel, /Qwen Transmission Agent/);

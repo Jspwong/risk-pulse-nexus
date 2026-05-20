@@ -20,7 +20,7 @@ const ROI_KEY_UNITS = {
 };
 const AGENT_PROMPT_VERSION = 'v8-max-3-risk-tags';
 const AGENT_CACHE_TTL_MS = 30 * 60 * 1000;
-const QWEN_TIMEOUT_MS = 45_000;
+const QWEN_TIMEOUT_MS = 90_000;
 const agentCache = new Map();
 
 function json(req, status, body) {

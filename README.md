@@ -8,7 +8,6 @@ Real-time enterprise risk perception engine powered by World Monitor's global in
 [![GitHub forks](https://img.shields.io/github/forks/Jspwong/risk-pulse-nexus?style=social)](https://github.com/Jspwong/risk-pulse-nexus/network/members)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Last commit](https://img.shields.io/github/last-commit/Jspwong/risk-pulse-nexus)](https://github.com/Jspwong/risk-pulse-nexus/commits/main)
 
 ---
 
@@ -23,3 +22,10 @@ Real-time enterprise risk perception engine powered by World Monitor's global in
 - **Demo + live hybrid** — curated enterprise scenarios + real-time news/cluster feeds
 - **Qwen agent-powered** — identification and transmission classification for every risk card
 - **AI-native alerts** — department-aware action plans tied to business impact and exposure windows
+
+## Quick start
+
+```bash
+npm install
+npm run dev
+```
